@@ -2,11 +2,11 @@
 pragma solidity ^0.8.12;
 
 import "forge-std/Test.sol";
-import "../script/DeployMockScript.sol";
-import "../dependencies/zerolend-1.0.0/contracts/mocks/tokens/MintableERC20.sol";
-import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPool.sol";
-import "../dependencies/zerolend-1.0.0/contracts/interfaces/IAToken.sol";
-import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProvider.sol";
+import "../../script/DeployMockScript.sol";
+import "../../dependencies/zerolend-1.0.0/contracts/mocks/tokens/MintableERC20.sol";
+import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPool.sol";
+import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IAToken.sol";
+import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProvider.sol";
 
 contract DeployMockTest is Test {
     DeployMockScript public script;
@@ -37,25 +37,13 @@ contract DeployMockTest is Test {
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
 
-        // Log initial setup
-        console.log("WETH address:", address(weth));
-        console.log("USDC address:", address(usdc));
-        console.log("Pool address:", address(pool));
-        console.log("aWETH address:", address(aWeth));
-        console.log("aUSDC address:", address(aUsdc));
     }
 
-    function testDepositsAndBorrows() public {
+    function test_DepositsAndBorrows() public {
         // Mint tokens to users
         weth.mint(alice, 12 ether);
         weth.mint(bob, 34 ether);
         usdc.mint(alice, 560000 * 10 ** 6); // 6 decimals for USDC
-
-        // Log initial balances
-        console.log("Initial balances:");
-        console.log("Alice WETH:", weth.balanceOf(alice));
-        console.log("Bob WETH:", weth.balanceOf(bob));
-        console.log("Alice USDC:", usdc.balanceOf(alice));
 
         // Alice deposits WETH
         vm.startPrank(alice);
@@ -78,13 +66,6 @@ contract DeployMockTest is Test {
         pool.setUserUseReserveAsCollateral(address(weth), true);
         vm.stopPrank();
 
-        // Log intermediate balances
-        console.log("After deposits:");
-        console.log("Alice aWETH:", aWeth.balanceOf(alice));
-        console.log("Bob aWETH:", aWeth.balanceOf(bob));
-        console.log("Alice aUSDC:", aUsdc.balanceOf(alice));
-
-        // Get Bob's account data before borrowing
         (
             uint256 totalCollateralBase,
             uint256 totalDebtBase,

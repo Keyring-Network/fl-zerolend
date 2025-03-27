@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.12;
 
-import "../dependencies/forge-std/src/Script.sol";
-import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProviderRegistry.sol";
-import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProvider.sol";
-import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPool.sol";
-import "../dependencies/zerolend-1.0.0/contracts/protocol/tokenization/AToken.sol";
-import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/configuration/ReserveConfiguration.sol";
-import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/types/DataTypes.sol";
-import "../src/LeveragePositionManager.sol";
+// import "../dependencies/forge-std/src/Script.sol";
+// import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProviderRegistry.sol";
+// import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProvider.sol";
+// import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPool.sol";
+// import "../dependencies/zerolend-1.0.0/contracts/protocol/tokenization/AToken.sol";
+// import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/configuration/ReserveConfiguration.sol";
+// import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/types/DataTypes.sol";
+// import "../src/LeveragedPositionManager.sol";
 
-contract TakePositionScript is Script {
+contract TakePositionScript {
 // struct Addresses {
 //     address poolAddressesProviderRegistry;
 //     address poolAddressesProvider;

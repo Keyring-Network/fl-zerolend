@@ -169,10 +169,5 @@ contract DeployMockScript is Script {
         configuratorProxy.setReserveFactor(address(weth), 1000); // 10%
         configuratorProxy.setReserveBorrowing(address(usdc), true);
         configuratorProxy.setReserveFactor(address(usdc), 1000); // 10%
-        console.log("weth:", address(weth));
-        console.log("usdc:", address(usdc));
-        console.log("aWeth:", address(aWeth));
-        console.log("aUsdc:", address(aUsdc));
-        console.log("registry:", address(registry));
     }
 }
