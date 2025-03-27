@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.12;
 
-import {IPool} from "@zerolend/interfaces/IPool.sol";
-import {IPoolAddressesProviderRegistry} from "@zerolend/interfaces/IPoolAddressesProviderRegistry.sol";
-import {IPoolAddressesProvider} from "@zerolend/interfaces/IPoolAddressesProvider.sol";
-import {IERC20Detailed as IERC20} from "@zerolend/dependencies/openzeppelin/contracts/IERC20Detailed.sol";
-import {AToken} from "@zerolend/protocol/tokenization/AToken.sol";
-import {IScaledBalanceToken} from "@zerolend/interfaces/IScaledBalanceToken.sol";
-import {IPoolFlashLoanReceiver} from "@zerolend/interfaces/IPoolFlashLoanReceiver.sol";
+import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPool.sol";
+import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProviderRegistry.sol";
+import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProvider.sol";
+import "../dependencies/zerolend-1.0.0/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
+import "../dependencies/zerolend-1.0.0/contracts/dependencies/openzeppelin/contracts/SafeERC20.sol";
+import "../dependencies/zerolend-1.0.0/contracts/protocol/tokenization/AToken.sol";
+import "../dependencies/zerolend-1.0.0/contracts/interfaces/IScaledBalanceToken.sol";
+import "../dependencies/zerolend-1.0.0/contracts/flashloan/interfaces/IFlashLoanReceiver.sol";
+import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/types/DataTypes.sol";
+import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPriceOracle.sol";
 
 /// For a brand new position (0 collateral, 0 borrowed), given a LTV, a user with an amount X of tokens can take the following position:
     /// - Leverage factor = 1 / (1 - LTV)
@@ -21,16 +24,22 @@ import {IPoolFlashLoanReceiver} from "@zerolend/interfaces/IPoolFlashLoanReceive
     /// The X amount covers the difference between the total lent and the total borrowed.
 
 
-contract LeveragePositionManager is IPoolFlashLoanReceiver {
+contract LeveragePositionManager is IFlashLoanReceiver {
+    using SafeERC20 for IERC20;
+
     error TokenNotSupported(address tokenAddress);
     error InsufficientLentTokenBalance(address tokenAddress, uint256 balance);
     error LTVTooHigh(uint256 requestedLTV, uint256 maxPoolLTV);
+    error LTVTooLow(uint256 targetLTV, uint256 currentLTV);
+
     IPoolAddressesProviderRegistry public immutable poolAddressesProviderRegistry;
+    IPoolAddressesProvider public immutable ADDRESSES_PROVIDER;
+    IPool public immutable POOL;
 
-
-    
-    constructor(address _poolAddressesProviderRegistry) {
+    constructor(address _poolAddressesProviderRegistry, address _addressesProvider, address _pool) {
         poolAddressesProviderRegistry = IPoolAddressesProviderRegistry(_poolAddressesProviderRegistry);
+        ADDRESSES_PROVIDER = IPoolAddressesProvider(_addressesProvider);
+        POOL = IPool(_pool);
     }
 
     // @param aToken: aToken to check if it is supported
@@ -61,33 +70,34 @@ contract LeveragePositionManager is IPoolFlashLoanReceiver {
     // @notice: this function is used to take a leveraged position by looping lending and borrowing using the same token
     // @notice: not all prerequisites are checked here (pool liquidity availability, token used as collateral, IRMode, etc.) as it will be called by the core contracts. Only basic prerequisites are checked here (token user's balance and ltv limit to have early revert)
     function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, bool interestRateMode) public {
-
         // @dev: revert if the token is not supported
         revertIfATokenNotSupported(aToken);
 
         // @dev: check if the token amount held by the user is above the amount to lend
-        if (aLentToken.balanceOf(address(this)) < lentTokenAmount) {
-            revert InsufficientLentTokenBalance(address(aLentToken), lentTokenAmount);
+        if (aToken.balanceOf(address(this)) < lentTokenAmount) {
+            revert InsufficientLentTokenBalance(address(aToken), lentTokenAmount);
         }
 
         IPool pool = aToken.POOL();
-
-        uint256 maxLTV = pool.MAX_LTV();
+        address underlyingAsset = aToken.UNDERLYING_ASSET_ADDRESS();
+        DataTypes.ReserveData memory reserveData = pool.getReserveData(underlyingAsset);
+        uint256 maxLTV = (reserveData.configuration.data & 0xFFFF);
 
         if (targetLtv > maxLTV) {
-            revert LtvTooHigh(targetLtv, maxLTV);
+            revert LTVTooHigh(targetLtv, maxLTV);
         }
 
         targetLtv = targetLtv == 0 ? maxLTV : targetLtv;
 
-        uint256 currentLtv = pool.getUserAccountData(user).ltv;
+        DataTypes.UserConfigurationMap memory userConfig = pool.getUserConfiguration(msg.sender);
+        uint256 currentLtv = (userConfig.data & 0xFFFF);
 
         if (currentLtv == targetLtv) {
-            revert LtvTooLow(targetLtv, currentLtv);
+            revert LTVTooLow(targetLtv, currentLtv);
         }
 
         // @dev: get the current collateral in base
-        uint256 totalCollateralBase = pool.getUserAccountData(user).totalCollateralBase;
+        (uint256 totalCollateralBase,,,,,) = pool.getUserAccountData(msg.sender);
 
         // @dev: get the target collateral in base. This is the lentTokenAmount x the leverage factor
         uint256 targetCollateralBase = lentTokenAmount / (10000 - targetLtv) * 10000;
@@ -101,20 +111,60 @@ contract LeveragePositionManager is IPoolFlashLoanReceiver {
             // - 1 ETH (base currency) = 2000 USD
             // - 1 BTC = 80000 USD
             // => getAssetPrice(BTC) = 80000 / 2000 x 10^18 = 4000000000000000000000000
-        uint256 tokenPrice = pool.getPriceOracle().getAssetPrice(address(aToken.UNDERLYING()));
+        IPriceOracle priceOracle = IPriceOracle(pool.ADDRESSES_PROVIDER().getPriceOracle());
+        uint256 tokenPrice = priceOracle.getAssetPrice(underlyingAsset);
         uint256 collateralToGetFromFlashloanInToken = collateralToGetFromFlashloanBase / tokenPrice * 1e18;
 
         // @dev: safe transfer the lent token to the contract
-        aLentToken.underlying().safeTransferFrom(msg.sender, address(this), lentTokenAmount);
+        IERC20(underlyingAsset).safeTransferFrom(msg.sender, address(this), lentTokenAmount);
 
         // @dev: prepare the flashloan
         // @notice: we need to approve the pool to spend the collateral token
-        aLentToken.underlying().approve(address(pool), collateralToGetFromFlashloanInToken);
+        IERC20(underlyingAsset).approve(address(pool), collateralToGetFromFlashloanInToken);
 
         // @dev: execute the flashloan
-        pool.flashLoan(address(this), address(aLentToken.underlying()), collateralToGetFromFlashloanInToken, "");
-        
-
+        address[] memory assets = new address[](1);
+        assets[0] = underlyingAsset;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = collateralToGetFromFlashloanInToken;
+        uint256[] memory interestRateModes = new uint256[](1);
+        interestRateModes[0] = 0; // NONE mode for regular flashloan
+        address onBehalfOf = msg.sender;
+        bytes memory params = "";
+        uint16 referralCode = 0;
+        pool.flashLoan(
+            address(this),
+            assets,
+            amounts,
+            interestRateModes,
+            onBehalfOf,
+            params,
+            referralCode
+        );
     }
 
+    function executeOperation(
+        address[] calldata assets,
+        uint256[] calldata amounts,
+        uint256[] calldata premiums,
+        address initiator,
+        bytes calldata params
+    ) external override returns (bool) {
+        require(msg.sender == address(POOL), "Caller must be pool");
+        require(assets.length == 1, "Only single asset flash loan supported");
+        require(initiator == address(this), "Initiator must be this contract");
+
+        address asset = assets[0];
+        uint256 amount = amounts[0];
+        uint256 premium = premiums[0];
+
+        // Supply the borrowed amount to the pool
+        IERC20(asset).approve(address(POOL), amount);
+        POOL.supply(asset, amount, address(this), 0);
+
+        // Approve the pool to spend the borrowed amount plus premium
+        IERC20(asset).approve(address(POOL), amount + premium);
+
+        return true;
+    }
 }
