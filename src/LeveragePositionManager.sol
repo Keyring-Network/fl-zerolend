@@ -7,7 +7,7 @@ import {IPoolAddressesProvider} from "@zerolend/interfaces/IPoolAddressesProvide
 import {IERC20Detailed as IERC20} from "@zerolend/dependencies/openzeppelin/contracts/IERC20Detailed.sol";
 import {AToken} from "@zerolend/protocol/tokenization/AToken.sol";
 import {IScaledBalanceToken} from "@zerolend/interfaces/IScaledBalanceToken.sol";
-
+import {IPoolFlashLoanReceiver} from "@zerolend/interfaces/IPoolFlashLoanReceiver.sol";
 
 /// For a brand new position (0 collateral, 0 borrowed), given a LTV, a user with an amount X of tokens can take the following position:
     /// - Leverage factor = 1 / (1 - LTV)
@@ -21,7 +21,7 @@ import {IScaledBalanceToken} from "@zerolend/interfaces/IScaledBalanceToken.sol"
     /// The X amount covers the difference between the total lent and the total borrowed.
 
 
-contract LeveragePositionManager {
+contract LeveragePositionManager is IPoolFlashLoanReceiver {
     error TokenNotSupported(address tokenAddress);
     error InsufficientLentTokenBalance(address tokenAddress, uint256 balance);
     error LTVTooHigh(uint256 requestedLTV, uint256 maxPoolLTV);
