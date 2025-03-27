@@ -36,10 +36,10 @@ contract DeployMockScript is Script {
         MintableERC20 usdc = new MintableERC20("USD Coin", "USDC", 6);
 
         // 2. Deploy registry
-        registry = new PoolAddressesProviderRegistry(msg.sender);
+        registry = new PoolAddressesProviderRegistry(address(this));
 
         // 3. Deploy one unique market
-        IPoolAddressesProvider market = new PoolAddressesProvider("Mocked ZeroLend Market", address(registry));
+        IPoolAddressesProvider market = new PoolAddressesProvider("Mocked ZeroLend Market", address(this));
 
         // 4. Register market in registry
         registry.registerAddressesProvider(address(market), 1);
@@ -57,7 +57,9 @@ contract DeployMockScript is Script {
 
         // 8. Deploy and set pool configurator
         IPoolConfigurator configurator = new PoolConfigurator();
+        configurator.initialize(address(market));
         market.setPoolConfiguratorImpl(address(configurator));
+        IPoolConfigurator configuratorProxy = IPoolConfigurator(market.getPoolConfigurator());
 
         // 10. Deploy tokens for WETH & USD reserve
         wethAToken = new AToken(pool);
@@ -111,7 +113,6 @@ contract DeployMockScript is Script {
         );
 
         // 13. Configure reserves
-        IPoolConfigurator configuratorProxy = IPoolConfigurator(market.getPoolConfigurator());
         configuratorProxy.configureReserveAsCollateral(
             address(weth),
             8000, // 80% LTV
