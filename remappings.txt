@@ -1,0 +1,2 @@
+forge-std/=dependencies/forge-std-1.9.6/src
+@zerolend/=dependencies/zerolend-1.0.0/contracts
