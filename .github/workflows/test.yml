@@ -22,11 +22,11 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Show Forge version
+        with:
+          version: stable
+      - name: Install dependencies
         run: |
-          forge --version
-
+          forge soldeer install
       - name: Run Forge fmt
         run: |
           forge fmt --check
