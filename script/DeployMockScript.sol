@@ -22,48 +22,58 @@ import "../dependencies/zerolend-1.0.0/contracts/interfaces/IAToken.sol";
 import "../dependencies/zerolend-1.0.0/contracts/interfaces/IStableDebtToken.sol";
 import "../dependencies/zerolend-1.0.0/contracts/interfaces/IVariableDebtToken.sol";
 import "../dependencies/zerolend-1.0.0/contracts/flashloan/interfaces/IFlashLoanReceiver.sol";
+import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/types/ConfiguratorInputTypes.sol";
+import "../dependencies/zerolend-1.0.0/contracts/protocol/configuration/ACLManager.sol";
 
 contract DeployMockScript is Script {
     function setUp() public {}
 
-    AToken public wethAToken;
-    AToken public usdcAToken;
-    IPoolAddressesProviderRegistry registry;
+    AToken public aWeth;
+    AToken public aUsdc;
+    MintableERC20 public weth;
+    MintableERC20 public usdc;
+    IPoolAddressesProviderRegistry public registry;
+    IPoolAddressesProvider public market;
 
     function run() public {
         // 1. Deploy mock tokens
-        MintableERC20 weth = new MintableERC20("Wrapped Ether", "WETH", 18);
-        MintableERC20 usdc = new MintableERC20("USD Coin", "USDC", 6);
+        weth = new MintableERC20("Wrapped Ether", "WETH", 18);
+        usdc = new MintableERC20("USD Coin", "USDC", 6);
 
         // 2. Deploy registry
         registry = new PoolAddressesProviderRegistry(address(this));
 
         // 3. Deploy one unique market
-        IPoolAddressesProvider market = new PoolAddressesProvider("Mocked ZeroLend Market", address(this));
+        market = new PoolAddressesProvider("Mocked ZeroLend Market", address(this));
 
-        // 4. Register market in registry
+        // 4. Set the ACLAdmin on the market
+        market.setACLAdmin(address(this));
+
+        // 5. Deploy ACL Manager and set roles
+        ACLManager aclManager = new ACLManager(market);
+        market.setACLManager(address(aclManager));
+        aclManager.addPoolAdmin(address(this));
+        aclManager.addAssetListingAdmin(address(this));
+        aclManager.addRiskAdmin(address(this));
+        aclManager.addEmergencyAdmin(address(this));
+
+        // 6. Register market in registry
         registry.registerAddressesProvider(address(market), 1);
 
-        // 5. Deploy and set price oracle
+        // 7. Deploy and set price oracle
         PriceOracle oracle = new PriceOracle();
         oracle.setEthUsdPrice(2000e18); // 1 ETH = 2000 USDeq.
         oracle.setAssetPrice(address(weth), 2000e18); // 1 WETH = 2000 USDeq.
         oracle.setAssetPrice(address(usdc), 1e18); // 1 USDC = 1 USDeq.
         market.setPriceOracle(address(oracle));
 
-        // 6. Deploy and set pool implementation and get pool proxy
+        // 8. Deploy and set pool implementation and get pool proxy
         market.setPoolImpl(address(new Pool(market)));
         IPool pool = IPool(market.getPool());
 
-        // 8. Deploy and set pool configurator
-        IPoolConfigurator configurator = new PoolConfigurator();
-        configurator.initialize(address(market));
-        market.setPoolConfiguratorImpl(address(configurator));
-        IPoolConfigurator configuratorProxy = IPoolConfigurator(market.getPoolConfigurator());
-
         // 10. Deploy tokens for WETH & USD reserve
-        wethAToken = new AToken(pool);
-        usdcAToken = new AToken(pool);
+        aWeth = new AToken(pool);
+        aUsdc = new AToken(pool);
         StableDebtToken wethStableDebtToken = new StableDebtToken(pool);
         VariableDebtToken wethVariableDebtToken = new VariableDebtToken(pool);
         StableDebtToken usdcStableDebtToken = new StableDebtToken(pool);
@@ -77,53 +87,81 @@ contract DeployMockScript is Script {
             0.08e27, // variable rate slope1
             0.75e27, // variable rate slope2
             0.03e27, // stable rate slope1
-            0.60e27, // stable rate slope2
+            0.6e27, // stable rate slope2
             0.02e27, // base stable rate offset
             0.01e27, // stable rate excess offset
-            0.5e27   // optimal stable to total debt ratio
+            0.5e27 // optimal stable to total debt ratio
         );
         IDefaultInterestRateStrategy usdcStrategy = new DefaultReserveInterestRateStrategy(
             IPoolAddressesProvider(address(market)),
             0.9e27, // optimal utilization
             0.03e27, // base variable borrow rate
             0.06e27, // variable rate slope1
-            0.80e27, // variable rate slope2
+            0.8e27, // variable rate slope2
             0.02e27, // stable rate slope1
             0.65e27, // stable rate slope2
             0.01e27, // base stable rate offset
             0.008e27, // stable rate excess offset
-            0.6e27   // optimal stable to total debt ratio
+            0.6e27 // optimal stable to total debt ratio
         );
 
         // 12. Initialize reserves
-        pool.initReserve(
-            address(weth),
-            address(wethAToken),
-            address(wethStableDebtToken),
-            address(wethVariableDebtToken),
-            address(wethStrategy)
-        );
+        ConfiguratorInputTypes.InitReserveInput[] memory initInputs = new ConfiguratorInputTypes.InitReserveInput[](2);
 
-        pool.initReserve(
-            address(usdc),
-            address(usdcAToken),
-            address(usdcStableDebtToken),
-            address(usdcVariableDebtToken),
-            address(usdcStrategy)
-        );
+        initInputs[0] = ConfiguratorInputTypes.InitReserveInput({
+            aTokenImpl: address(aWeth),
+            stableDebtTokenImpl: address(wethStableDebtToken),
+            variableDebtTokenImpl: address(wethVariableDebtToken),
+            underlyingAssetDecimals: 18,
+            interestRateStrategyAddress: address(wethStrategy),
+            underlyingAsset: address(weth),
+            treasury: address(this),
+            incentivesController: address(0),
+            aTokenName: "ZeroLend WETH",
+            aTokenSymbol: "zWETH",
+            variableDebtTokenName: "ZeroLend Variable Debt WETH",
+            variableDebtTokenSymbol: "variableDebtWETH",
+            stableDebtTokenName: "ZeroLend Stable Debt WETH",
+            stableDebtTokenSymbol: "stableDebtWETH",
+            params: bytes("")
+        });
+
+        initInputs[1] = ConfiguratorInputTypes.InitReserveInput({
+            aTokenImpl: address(aUsdc),
+            stableDebtTokenImpl: address(usdcStableDebtToken),
+            variableDebtTokenImpl: address(usdcVariableDebtToken),
+            underlyingAssetDecimals: 6,
+            interestRateStrategyAddress: address(usdcStrategy),
+            underlyingAsset: address(usdc),
+            treasury: address(this),
+            incentivesController: address(0),
+            aTokenName: "ZeroLend USDC",
+            aTokenSymbol: "zUSDC",
+            variableDebtTokenName: "ZeroLend Variable Debt USDC",
+            variableDebtTokenSymbol: "variableDebtUSDC",
+            stableDebtTokenName: "ZeroLend Stable Debt USDC",
+            stableDebtTokenSymbol: "stableDebtUSDC",
+            params: bytes("")
+        });
+
+        IPoolConfigurator configurator = new PoolConfigurator();
+        market.setPoolConfiguratorImpl(address(configurator));
+        IPoolConfigurator configuratorProxy = IPoolConfigurator(market.getPoolConfigurator());
+
+        configuratorProxy.initReserves(initInputs);
 
         // 13. Configure reserves
         configuratorProxy.configureReserveAsCollateral(
             address(weth),
             8000, // 80% LTV
             8250, // 82.5% liquidation threshold
-            10500  // 105% liquidation bonus
+            10500 // 105% liquidation bonus
         );
         configuratorProxy.configureReserveAsCollateral(
             address(usdc),
             8500, // 85% LTV
             8750, // 87.5% liquidation threshold
-            10500  // 105% liquidation bonus
+            10500 // 105% liquidation bonus
         );
 
         // 14. Enable borrowing and set reserve factor
@@ -131,7 +169,10 @@ contract DeployMockScript is Script {
         configuratorProxy.setReserveFactor(address(weth), 1000); // 10%
         configuratorProxy.setReserveBorrowing(address(usdc), true);
         configuratorProxy.setReserveFactor(address(usdc), 1000); // 10%
-
-        vm.stopBroadcast();
+        console.log("weth:", address(weth));
+        console.log("usdc:", address(usdc));
+        console.log("aWeth:", address(aWeth));
+        console.log("aUsdc:", address(aUsdc));
+        console.log("registry:", address(registry));
     }
 }
