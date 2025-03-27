@@ -17,8 +17,8 @@ contract DeployMockTest is Test {
     IAToken public aUsdc;
     IPoolAddressesProvider public market;
 
-    address public alice = address(0x1);
-    address public bob = address(0x2);
+    address public alice = makeAddr("Alice");
+    address public bob = makeAddr("Bob");
 
     function setUp() public {
         // Deploy the stack using the script
@@ -94,14 +94,6 @@ contract DeployMockTest is Test {
             uint256 healthFactor
         ) = pool.getUserAccountData(bob);
 
-        console.log("Bob's account data before borrowing:");
-        console.log("Total collateral (base units):", totalCollateralBase);
-        console.log("Total debt (base units):", totalDebtBase);
-        console.log("Available borrows (base units):", availableBorrowsBase);
-        console.log("Current liquidation threshold:", currentLiquidationThreshold);
-        console.log("LTV:", ltv);
-        console.log("Health factor:", healthFactor);
-
         // Calculate safe borrow amount (80% of available borrows to maintain healthy position)
         uint256 borrowAmount = (availableBorrowsBase * 80) / 100 / 10 ** 12; // Convert to USDC decimals and take 80%
         console.log("Bob attempting to borrow:", borrowAmount, "USDC");
@@ -116,23 +108,26 @@ contract DeployMockTest is Test {
         );
         vm.stopPrank();
 
-        // Log final balances
-        console.log("Final balances:");
-        console.log("Alice aWETH:", aWeth.balanceOf(alice));
-        console.log("Bob aWETH:", aWeth.balanceOf(bob));
-        console.log("Alice aUSDC:", aUsdc.balanceOf(alice));
-        console.log("Bob USDC borrowed:", usdc.balanceOf(bob));
+
+        // Log Alice's final account data
+        (totalCollateralBase, totalDebtBase, availableBorrowsBase, currentLiquidationThreshold, ltv, healthFactor) =
+            pool.getUserAccountData(alice);
+        vm.assertEq(totalCollateralBase, 584000000000000000000000); // 12 WETH + 560,000 USDC in base units
+        vm.assertEq(totalDebtBase, 0);
+        vm.assertEq(availableBorrowsBase, 495173600000000000000000); // Available borrows based on collateral
+        vm.assertEq(currentLiquidationThreshold, 8729); // 87.29% threshold
+        vm.assertEq(ltv, 8479); // 84.79% LTV
+        vm.assertEq(healthFactor, type(uint256).max); // No debt, so max health factor
 
         // Log Bob's final account data
         (totalCollateralBase, totalDebtBase, availableBorrowsBase, currentLiquidationThreshold, ltv, healthFactor) =
             pool.getUserAccountData(bob);
 
-        console.log("Bob's final account data:");
-        console.log("Total collateral (base units):", totalCollateralBase);
-        console.log("Total debt (base units):", totalDebtBase);
-        console.log("Available borrows (base units):", availableBorrowsBase);
-        console.log("Current liquidation threshold:", currentLiquidationThreshold);
-        console.log("LTV:", ltv);
-        console.log("Health factor:", healthFactor);
+        vm.assertEq(totalCollateralBase, 68000000000000000000000); // 34 WETH in base units
+        vm.assertEq(totalDebtBase, 43520000000000000000000); // Borrowed USDC amount in base units
+        vm.assertEq(availableBorrowsBase, 10880000000000000000000); // Remaining available borrows
+        vm.assertEq(currentLiquidationThreshold, 8250); // 82.50% threshold
+        vm.assertEq(ltv, 8000); // 80% LTV
+        vm.assertEq(healthFactor, 1289062500000000000); // Health factor based on collateral and debt
     }
 }

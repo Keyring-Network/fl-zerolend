@@ -6,5 +6,5 @@ solc = "0.8.12"
 optimizer = true
 
 [dependencies]
-zerolend = { version = "1.0.0", git = "git@github.com:zerolend/core-contracts-v1.git", rev = "cd75dfe01530fdbc5dbb5f47304b8c3658256fe8" }
+zerolend = { version = "1.0.0", git = "https://github.com/zerolend/core-contracts-v1.git", rev = "cd75dfe01530fdbc5dbb5f47304b8c3658256fe8" }
 forge-std = "1.9.6"
