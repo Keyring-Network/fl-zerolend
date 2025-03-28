@@ -41,7 +41,7 @@ contract LeveragedPositionManagerTest is Test {
         weth.mint(alice, 3000 * 10 ** weth.decimals());
         weth.mint(bob, 10 * 10 ** weth.decimals());
         usdc.mint(alice, 5600000000 * 10 ** usdc.decimals());
-
+        usdc.mint(bob, 1000000 * 10 ** usdc.decimals());
         // Alice fills in the pool
         vm.startPrank(alice);
         weth.approve(address(pool), type(uint256).max);
@@ -108,11 +108,34 @@ contract LeveragedPositionManagerTest is Test {
     }
 
     function test_AmountInTokenToBorrowWithExceedingCollateralAlreadyExisting() public {
-        uint256 amountInTokenToBorrow;
-
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+        
+        uint256 amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aWeth, 12 * 10 ** weth.decimals(), 8000, alice
         );
         vm.assertEq(amountInTokenToBorrow, 0);
+    }
+    function test_AmountInTokenToBorrowWithCollateralAlreadyExisting() public {
+
+        uint256 collateralInWethProvided = 10 * 10 ** weth.decimals();
+        vm.startPrank(bob);
+        pool.supply(address(weth), collateralInWethProvided, bob, 0);
+        vm.stopPrank();
+
+        uint256 amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+            aWeth, 12 * 10 ** weth.decimals(), 8000, bob
+        );
+        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals() - collateralInWethProvided);
+
+        vm.startPrank(bob);
+        uint256 collateralInUsdcProvided = collateralInWethProvided * 2000 / 10 ** (18 - usdc.decimals());
+        pool.supply(address(usdc), collateralInUsdcProvided, bob, 0);
+        vm.assertEq(usdc.balanceOf(bob), 980000 * 10 ** usdc.decimals());
+        vm.stopPrank();
+
+        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+            aWeth, 12 * 10 ** weth.decimals(), 8000, bob
+        );
+        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals() - 2 * collateralInWethProvided);
+
     }
 }
