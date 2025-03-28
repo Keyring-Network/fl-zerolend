@@ -207,8 +207,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         require(user == transientUser, "User must be the same");
         require(assets.length == 1, "Only single asset flash loan supported");
         require(initiator == address(this), "Initiator must be this contract");
-        require(address(AToken(assets[0]).POOL()) == address(transientPool), "Pool must be the same");
-
+        
         IERC20 token = IERC20(assets[0]);
         uint256 amount = amounts[0];
         uint256 premium = premiums[0];
