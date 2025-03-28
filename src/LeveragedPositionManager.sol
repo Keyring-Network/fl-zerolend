@@ -58,7 +58,38 @@ contract LeveragedPositionManager {
         }
     }
 
-    // @param aLentToken: aToken of the lent token
+    /// @param aToken The AToken to validate
+    /// @param targetLtv The desired LTV value
+    /// @param user The address of the user whose LTV is being validated
+    /// @return The validated target LTV (might be adjusted to max LTV if not specified)
+    /// @notice: validate the target LTV and return the final target LTV
+    /// @notice: if the target LTV is 0, it will be set to the max LTV of the pool
+    /// @notice: if the target LTV is greater than the max LTV of the pool, it will revert
+    /// @notice: if the target LTV is lower than the current LTV, it will revert
+    function validateLtv(AToken aToken, uint256 targetLtv, address user) public view returns (uint256) {
+        IPool pool = AToken(address(aToken)).POOL();
+        address underlyingAsset = aToken.UNDERLYING_ASSET_ADDRESS();
+        DataTypes.ReserveData memory reserveData = pool.getReserveData(underlyingAsset);
+        uint256 maxLTV = (reserveData.configuration.data & 0xFFFF);
+
+        if (targetLtv > maxLTV) {
+            revert LTVTooHigh(targetLtv, maxLTV);
+        }
+
+        targetLtv = targetLtv == 0 ? maxLTV : targetLtv;
+
+        // Get current LTV from user account data
+        (uint256 totalCollateralBase, uint256 totalDebtBase,,,,) = pool.getUserAccountData(user);
+        uint256 currentLtv = totalDebtBase == 0 ? 0 : (totalDebtBase * 10000) / totalCollateralBase;
+
+        if (currentLtv >= targetLtv) {
+            revert LTVTooLow(targetLtv, currentLtv);
+        }
+
+        return targetLtv;
+    }
+
+    // @param aToken: aToken of the lent token
     // @param aBorrowedToken: aToken of the borrowed token
     // @param interestRateMode: Mode of the interest rate: Mode stable (MODE 1) or Mode variable (MODE 2)
     // @param targetLtv: Target LTV to reach with a mantissa of 10000. Leave empty to use the max LTV of the pool
@@ -74,24 +105,10 @@ contract LeveragedPositionManager {
             revert InsufficientLentTokenBalance(address(aToken), lentTokenAmount);
         }
 
-        IPool pool = AToken(address(aToken)).POOL();
-        address underlyingAsset = aToken.UNDERLYING_ASSET_ADDRESS();
-        DataTypes.ReserveData memory reserveData = pool.getReserveData(underlyingAsset);
-        uint256 maxLTV = (reserveData.configuration.data & 0xFFFF);
+        // @dev: validate the target LTV and get the final target LTV
+        targetLtv = validateLtv(aToken, targetLtv, msg.sender);
 
-        if (targetLtv > maxLTV) {
-            revert LTVTooHigh(targetLtv, maxLTV);
-        }
-
-        targetLtv = targetLtv == 0 ? maxLTV : targetLtv;
-
-        DataTypes.UserConfigurationMap memory userConfig = pool.getUserConfiguration(msg.sender);
-        uint256 currentLtv = (userConfig.data & 0xFFFF);
-
-        if (currentLtv == targetLtv) {
-            revert LTVTooLow(targetLtv, currentLtv);
-        }
-
+        // @dev: get the amount of collateral to get from flashloan 
         uint256 collateralToGetFromFlashloanInToken =
             getCollateralToGetFromFlashloanInToken(aToken, lentTokenAmount, targetLtv, msg.sender);
         // @dev: safe transfer the lent token to the contract
@@ -99,11 +116,11 @@ contract LeveragedPositionManager {
 
         // @dev: prepare the flashloan
         // @notice: we need to approve the pool to spend the collateral token
-        IERC20(underlyingAsset).approve(address(pool), collateralToGetFromFlashloanInToken);
+        IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).approve(address(aToken.POOL()), collateralToGetFromFlashloanInToken);
 
         // @dev: execute the flashloan
         address[] memory assets = new address[](1);
-        assets[0] = underlyingAsset;
+        assets[0] = aToken.UNDERLYING_ASSET_ADDRESS();
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = collateralToGetFromFlashloanInToken;
         uint256[] memory interestRateModes = new uint256[](1);
@@ -111,7 +128,7 @@ contract LeveragedPositionManager {
         address onBehalfOf = msg.sender;
         bytes memory params = "";
         uint16 referralCode = 0;
-        pool.flashLoan(address(this), assets, amounts, interestRateModes, onBehalfOf, params, referralCode);
+        aToken.POOL().flashLoan(address(this), assets, amounts, interestRateModes, onBehalfOf, params, referralCode);
     }
 
     // @param aToken: aToken to to loop with

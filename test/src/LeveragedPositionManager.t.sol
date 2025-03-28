@@ -115,7 +115,6 @@ contract LeveragedPositionManagerTest is Test {
         vm.assertEq(amountInTokenToBorrow, 0);
     }
     function test_AmountInTokenToBorrowWithCollateralAlreadyExisting() public {
-
         uint256 collateralInWethProvided = 10 * 10 ** weth.decimals();
         vm.startPrank(bob);
         pool.supply(address(weth), collateralInWethProvided, bob, 0);
@@ -136,6 +135,49 @@ contract LeveragedPositionManagerTest is Test {
             aWeth, 12 * 10 ** weth.decimals(), 8000, bob
         );
         vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals() - 2 * collateralInWethProvided);
+    }
 
+    function test_ValidateLtv_ValidTargetLtv() public {
+        // Test with a valid target LTV (8000 = 80%)
+        uint256 targetLtv = 8000;
+        uint256 validatedLtv = leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
+        assertEq(validatedLtv, targetLtv);
+    }
+
+    function test_ValidateLtv_ZeroTargetLtv() public {
+        // Test with zero target LTV (should use max LTV)
+        uint256 targetLtv = 0;
+        uint256 validatedLtv = leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
+        assertEq(validatedLtv, 8000); // Max LTV is 80% in the mock setup
+    }
+
+    function test_ValidateLtv_ExceedsMaxLtv() public {
+        // Test with LTV exceeding max (8000 = 80%)
+        uint256 targetLtv = 8500; // 85%
+        vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.LTVTooHigh.selector, targetLtv, 8000));
+        leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
+    }
+
+    function test_ValidateLtv_CurrentLtvTooHigh() public {
+        // Setup: Bob deposits WETH and borrows USDC to create a position with ~75% LTV
+        vm.startPrank(bob);
+        uint256 depositAmount = 10 * 10 ** weth.decimals(); // 10 WETH = 20,000 USDC
+        pool.supply(address(weth), depositAmount, bob, 0);
+        pool.setUserUseReserveAsCollateral(address(weth), true);
+        // Borrow 15,000 USDC to create a 75% LTV position (15000/20000)
+        pool.borrow(address(usdc), 15000 * 10 ** usdc.decimals(), 2, 0, bob);
+        vm.stopPrank();
+
+        // Try to validate LTV that's lower than current position
+        uint256 targetLtv = 7000; // 70%
+        vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.LTVTooLow.selector, targetLtv, 7500));
+        leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
+    }
+
+    function test_ValidateLtv_DifferentTokens() public {
+        // Test with USDC token
+        uint256 targetLtv = 7500; // 75%
+        uint256 validatedLtv = leveragedPositionManager.validateLtv(aUsdc, targetLtv, bob);
+        assertEq(validatedLtv, targetLtv);
     }
 }
