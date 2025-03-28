@@ -75,22 +75,22 @@ contract LeveragedPositionManagerTest is Test {
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aWeth, 12 * 10 ** weth.decimals(), 8000, address(0)
         );
-        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals());
+        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals());
 
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aUsdc, 34 * 10 ** usdc.decimals(), 8000, address(0)
         );
-        vm.assertEq(amountInTokenToBorrow, 4 * 34 * 10 ** usdc.decimals());
+        vm.assertEq(amountInTokenToBorrow, 5 * 34 * 10 ** usdc.decimals());
 
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aWeth, 12 * 10 ** weth.decimals(), 8000, bob
         );
-        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals());
+        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals());
 
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aUsdc, 34 * 10 ** usdc.decimals(), 8000, bob
         );
-        vm.assertEq(amountInTokenToBorrow, 4 * 34 * 10 ** usdc.decimals());
+        vm.assertEq(amountInTokenToBorrow, 5 * 34 * 10 ** usdc.decimals());
 
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aWeth, 56 * 10 ** weth.decimals(), 0, address(0)
@@ -114,6 +114,7 @@ contract LeveragedPositionManagerTest is Test {
         );
         vm.assertEq(amountInTokenToBorrow, 0);
     }
+
     function test_AmountInTokenToBorrowWithCollateralAlreadyExisting() public {
         uint256 collateralInWethProvided = 10 * 10 ** weth.decimals();
         vm.startPrank(bob);
@@ -123,7 +124,7 @@ contract LeveragedPositionManagerTest is Test {
         uint256 amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aWeth, 12 * 10 ** weth.decimals(), 8000, bob
         );
-        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals() - collateralInWethProvided);
+        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals() - collateralInWethProvided);
 
         vm.startPrank(bob);
         uint256 collateralInUsdcProvided = collateralInWethProvided * 2000 / 10 ** (18 - usdc.decimals());
@@ -134,7 +135,7 @@ contract LeveragedPositionManagerTest is Test {
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aWeth, 12 * 10 ** weth.decimals(), 8000, bob
         );
-        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals() - 2 * collateralInWethProvided);
+        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals() - 2 * collateralInWethProvided);
     }
 
     function test_ValidateLtv_ValidTargetLtv() public {
@@ -179,5 +180,25 @@ contract LeveragedPositionManagerTest is Test {
         uint256 targetLtv = 7500; // 75%
         uint256 validatedLtv = leveragedPositionManager.validateLtv(aUsdc, targetLtv, bob);
         assertEq(validatedLtv, targetLtv);
+    }
+
+    function test_takePositionFromZeroCollateral() public {
+        
+        // Get account data before taking position
+        (uint256 totalCollateralBaseBefore, uint256 totalDebtBaseBefore,,,,) = pool.getUserAccountData(bob);
+        
+        // Take the position with 80% LTV and variable rate, using 10 WETH
+        vm.startPrank(bob);
+        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), 8000, 2);
+        vm.stopPrank();
+        
+        // Get account data after taking position
+        (uint256 totalCollateralBaseAfter, uint256 totalDebtBaseAfter,,,,) = pool.getUserAccountData(bob);
+        
+        // Assert that collateral and debt increased
+        assertGt(totalCollateralBaseAfter, totalCollateralBaseBefore, "Collateral should increase");
+        assertGt(totalDebtBaseAfter, totalDebtBaseBefore, "Debt should increase");
+        
+        vm.stopPrank();
     }
 }

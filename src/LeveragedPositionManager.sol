@@ -97,14 +97,14 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     // @notice: args expecting ATokens to be able to check their existence in the protocol
     // @notice: this function is used to take a leveraged position by looping lending and borrowing using the same token
     // @notice: not all prerequisites are checked here (pool liquidity availability, token used as collateral, IRMode, etc.) as it will be called by the core contracts. Only basic prerequisites are checked here (token user's balance and ltv limit to have early revert)
-    function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, bool interestRateMode) public {
+    function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, uint256 interestRateMode) public {
 
 
         // @dev: revert if the token is not supported
         revertIfATokenNotSupported(aToken);
 
         // @dev: check if the token amount held by the user is above the amount to lend
-        if (aToken.balanceOf(address(this)) < lentTokenAmount) {
+        if (IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(msg.sender) < lentTokenAmount) {
             revert InsufficientLentTokenBalance(address(aToken), lentTokenAmount);
         }
 
@@ -123,22 +123,16 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         // @dev: get the amount of collateral to get from flashloan 
         uint256 collateralToGetFromFlashloanInToken =
             getCollateralToGetFromFlashloanInToken(aToken, lentTokenAmount, targetLtv, msg.sender);
-        // @dev: safe transfer the lent token to the contract
-        //    IERC20(underlyingAsset).safeTransferFrom(msg.sender, address(this), lentTokenAmount);
-
-        // @dev: prepare the flashloan
-        // @notice: we need to approve the pool to spend the collateral token
-        IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).approve(address(aToken.POOL()), collateralToGetFromFlashloanInToken);
-
+        
         // @dev: execute the flashloan
         address[] memory assets = new address[](1);
         assets[0] = aToken.UNDERLYING_ASSET_ADDRESS();
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = collateralToGetFromFlashloanInToken;
         uint256[] memory interestRateModes = new uint256[](1);
-        interestRateModes[0] = 0; // NONE mode for regular flashloan
+        interestRateModes[0] = interestRateMode;
         address onBehalfOf = msg.sender;
-        bytes memory params = "";
+        bytes memory params = abi.encode(msg.sender, targetLtv, interestRateMode);
         uint16 referralCode = 0;
         aToken.POOL().flashLoan(address(this), assets, amounts, interestRateModes, onBehalfOf, params, referralCode);
     }
@@ -188,13 +182,13 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         console.log("totalCollateralInToken", totalCollateralInToken);
 
         uint256 collateralToGetFromFlashloanInToken;
-        if (totalCollateralInToken + lentTokenAmount >= targetCollateralInToken) {
-            // @dev: if the total collateral in tokens + the lent token amount is greater than the target collateral in tokens, we don't need to get any collateral from flashloan
+        if (totalCollateralInToken >= targetCollateralInToken) {
+            // @dev: if the total collateral in tokens is greater than the target collateral in tokens, we don't need to get any collateral from flashloan
             collateralToGetFromFlashloanInToken = 0;
         } else {
             // @dev: get the amount of collateral to get from flashloan
             // @notice: we need to subtract the lentTokenAmount from the total collateral in tokens because it will contribute to the collateral in the next flashloan
-            collateralToGetFromFlashloanInToken = targetCollateralInToken - totalCollateralInToken - lentTokenAmount;
+            collateralToGetFromFlashloanInToken = targetCollateralInToken - totalCollateralInToken;
         }
         console.log("collateralToGetFromFlashloanInToken", collateralToGetFromFlashloanInToken);
 
@@ -208,7 +202,9 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         address initiator,
         bytes calldata params
     ) external returns (bool) {
+        (address user, uint256 targetLtv, uint256 interestRateMode) = abi.decode(params, (address, uint256, uint256));
         require(msg.sender == address(transientPool), "Caller must be pool");
+        require(user == transientUser, "User must be the same");
         require(assets.length == 1, "Only single asset flash loan supported");
         require(initiator == address(this), "Initiator must be this contract");
         require(address(AToken(assets[0]).POOL()) == address(transientPool), "Pool must be the same");
@@ -222,6 +218,8 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         console.log("amount borrowed", amount);
         console.log("premium to pay", premium);
         
+
+        /// TODO: take the position, targeting the targetLtv and the interest rate mode then repay the flashloan
 
         return true;
     }

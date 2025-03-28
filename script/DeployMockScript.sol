@@ -193,5 +193,9 @@ contract DeployMockScript is Script {
         configuratorProxy.setReserveFactor(address(weth), 1000); // 10%
         configuratorProxy.setReserveBorrowing(address(usdc), true);
         configuratorProxy.setReserveFactor(address(usdc), 1000); // 10%
+
+        // 14. Enable flash loans
+        configuratorProxy.setReserveFlashLoaning(address(weth), true);
+        configuratorProxy.setReserveFlashLoaning(address(usdc), true);
     }
 }
