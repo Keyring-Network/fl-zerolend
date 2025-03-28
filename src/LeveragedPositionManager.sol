@@ -24,172 +24,176 @@ import "forge-std/console.sol";
 /// The X amount covers the difference between the total lent and the total borrowed.
 
 contract LeveragedPositionManager {
-using SafeERC20 for IERC20;
+    using SafeERC20 for IERC20;
 
-error TokenNotSupported(address tokenAddress);
-error TokenPriceZeroOrUnknown(address tokenAddress);
-error InsufficientLentTokenBalance(address tokenAddress, uint256 balance);
-error LTVTooHigh(uint256 requestedLTV, uint256 maxPoolLTV);
-error LTVTooLow(uint256 targetLTV, uint256 currentLTV);
+    error TokenNotSupported(address tokenAddress);
+    error TokenPriceZeroOrUnknown(address tokenAddress);
+    error InsufficientLentTokenBalance(address tokenAddress, uint256 balance);
+    error LTVTooHigh(uint256 requestedLTV, uint256 maxPoolLTV);
+    error LTVTooLow(uint256 targetLTV, uint256 currentLTV);
 
-IPoolAddressesProviderRegistry public immutable poolAddressesProviderRegistry;
+    IPoolAddressesProviderRegistry public immutable poolAddressesProviderRegistry;
 
-constructor(address _poolAddressesProviderRegistry) {
-    poolAddressesProviderRegistry = IPoolAddressesProviderRegistry(_poolAddressesProviderRegistry);
-}
+    constructor(address _poolAddressesProviderRegistry) {
+        poolAddressesProviderRegistry = IPoolAddressesProviderRegistry(_poolAddressesProviderRegistry);
+    }
 
-// @param aToken: aToken to check if it is supported
-// @notice: returns true if the aToken is supported, false otherwise
-function revertIfATokenNotSupported(AToken aToken) public view {
-    IPool pool = AToken(address(aToken)).POOL();
-    IPoolAddressesProvider addressesProvider = pool.ADDRESSES_PROVIDER();
-    address[] memory poolAdressesProviders = poolAddressesProviderRegistry.getAddressesProvidersList();
+    // @param aToken: aToken to check if it is supported
+    // @notice: returns true if the aToken is supported, false otherwise
+    function revertIfATokenNotSupported(AToken aToken) public view {
+        IPool pool = AToken(address(aToken)).POOL();
+        IPoolAddressesProvider addressesProvider = pool.ADDRESSES_PROVIDER();
+        address[] memory poolAdressesProviders = poolAddressesProviderRegistry.getAddressesProvidersList();
 
-    bool isSupported = false;
-    for (uint256 i = 0; i < poolAdressesProviders.length; i++) {
-        if (address(addressesProvider) == poolAdressesProviders[i]) {
-            isSupported = true;
-            break;
+        bool isSupported = false;
+        for (uint256 i = 0; i < poolAdressesProviders.length; i++) {
+            if (address(addressesProvider) == poolAdressesProviders[i]) {
+                isSupported = true;
+                break;
+            }
+        }
+
+        if (!isSupported) {
+            revert TokenNotSupported(address(aToken));
         }
     }
 
-    if (!isSupported) {
-        revert TokenNotSupported(address(aToken));
+    // @param aLentToken: aToken of the lent token
+    // @param aBorrowedToken: aToken of the borrowed token
+    // @param interestRateMode: Mode of the interest rate: Mode stable (MODE 1) or Mode variable (MODE 2)
+    // @param targetLtv: Target LTV to reach with a mantissa of 10000. Leave empty to use the max LTV of the pool
+    // @notice: args expecting ATokens to be able to check their existence in the protocol
+    // @notice: this function is used to take a leveraged position by looping lending and borrowing using the same token
+    // @notice: not all prerequisites are checked here (pool liquidity availability, token used as collateral, IRMode, etc.) as it will be called by the core contracts. Only basic prerequisites are checked here (token user's balance and ltv limit to have early revert)
+    function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, bool interestRateMode) public {
+        // @dev: revert if the token is not supported
+        revertIfATokenNotSupported(aToken);
+
+        // @dev: check if the token amount held by the user is above the amount to lend
+        if (aToken.balanceOf(address(this)) < lentTokenAmount) {
+            revert InsufficientLentTokenBalance(address(aToken), lentTokenAmount);
+        }
+
+        IPool pool = AToken(address(aToken)).POOL();
+        address underlyingAsset = aToken.UNDERLYING_ASSET_ADDRESS();
+        DataTypes.ReserveData memory reserveData = pool.getReserveData(underlyingAsset);
+        uint256 maxLTV = (reserveData.configuration.data & 0xFFFF);
+
+        if (targetLtv > maxLTV) {
+            revert LTVTooHigh(targetLtv, maxLTV);
+        }
+
+        targetLtv = targetLtv == 0 ? maxLTV : targetLtv;
+
+        DataTypes.UserConfigurationMap memory userConfig = pool.getUserConfiguration(msg.sender);
+        uint256 currentLtv = (userConfig.data & 0xFFFF);
+
+        if (currentLtv == targetLtv) {
+            revert LTVTooLow(targetLtv, currentLtv);
+        }
+
+        uint256 collateralToGetFromFlashloanInToken =
+            getCollateralToGetFromFlashloanInToken(aToken, lentTokenAmount, targetLtv, msg.sender);
+        // @dev: safe transfer the lent token to the contract
+        //    IERC20(underlyingAsset).safeTransferFrom(msg.sender, address(this), lentTokenAmount);
+
+        // @dev: prepare the flashloan
+        // @notice: we need to approve the pool to spend the collateral token
+        IERC20(underlyingAsset).approve(address(pool), collateralToGetFromFlashloanInToken);
+
+        // @dev: execute the flashloan
+        address[] memory assets = new address[](1);
+        assets[0] = underlyingAsset;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = collateralToGetFromFlashloanInToken;
+        uint256[] memory interestRateModes = new uint256[](1);
+        interestRateModes[0] = 0; // NONE mode for regular flashloan
+        address onBehalfOf = msg.sender;
+        bytes memory params = "";
+        uint16 referralCode = 0;
+        pool.flashLoan(address(this), assets, amounts, interestRateModes, onBehalfOf, params, referralCode);
     }
-}
 
-// @param aLentToken: aToken of the lent token
-// @param aBorrowedToken: aToken of the borrowed token
-// @param interestRateMode: Mode of the interest rate: Mode stable (MODE 1) or Mode variable (MODE 2)
-// @param targetLtv: Target LTV to reach with a mantissa of 10000. Leave empty to use the max LTV of the pool
-// @notice: args expecting ATokens to be able to check their existence in the protocol
-// @notice: this function is used to take a leveraged position by looping lending and borrowing using the same token
-// @notice: not all prerequisites are checked here (pool liquidity availability, token used as collateral, IRMode, etc.) as it will be called by the core contracts. Only basic prerequisites are checked here (token user's balance and ltv limit to have early revert)
-function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, bool interestRateMode) public {
-    // @dev: revert if the token is not supported
-    revertIfATokenNotSupported(aToken);
+    // @param aToken: aToken to to loop with
+    // @param lentTokenAmount: amount of the lent token
+    // @param targetLtv: target LTV to reach with a mantissa of 10000
+    // @notice: returns the amount of tokens to get from flashloan in tokens
+    function getCollateralToGetFromFlashloanInToken(
+        AToken aToken,
+        uint256 lentTokenAmount,
+        uint256 targetLtv,
+        address user
+    ) public view returns (uint256) {
+        console.log("--------------------------------");
+        console.log("aToken", address(aToken));
+        console.log("token", address(aToken.UNDERLYING_ASSET_ADDRESS()));
+        console.log("lentTokenAmount", lentTokenAmount);
+        console.log("targetLtv", targetLtv);
+        console.log("user", user);
+        console.log("--------------------------------");
 
-    // @dev: check if the token amount held by the user is above the amount to lend
-    if (aToken.balanceOf(address(this)) < lentTokenAmount) {
-        revert InsufficientLentTokenBalance(address(aToken), lentTokenAmount);
-    }
+        // @dev: get the target collateral in tokens. This is the lentTokenAmount x the leverage factor
+        uint256 targetCollateralInToken = lentTokenAmount / (10000 - targetLtv) * 10000;
+        console.log("targetCollateralInToken", targetCollateralInToken);
 
-    IPool pool = AToken(address(aToken)).POOL();
-    address underlyingAsset = aToken.UNDERLYING_ASSET_ADDRESS();
-    DataTypes.ReserveData memory reserveData = pool.getReserveData(underlyingAsset);
-    uint256 maxLTV = (reserveData.configuration.data & 0xFFFF);
+        // @dev: get the current collateral in base
+        (uint256 totalCollateralBase,,,,,) = aToken.POOL().getUserAccountData(user);
+        console.log("totalCollateralBase", totalCollateralBase);
 
-    if (targetLtv > maxLTV) {
-        revert LTVTooHigh(targetLtv, maxLTV);
-    }
-
-    targetLtv = targetLtv == 0 ? maxLTV : targetLtv;
-
-    DataTypes.UserConfigurationMap memory userConfig = pool.getUserConfiguration(msg.sender);
-    uint256 currentLtv = (userConfig.data & 0xFFFF);
-
-    if (currentLtv == targetLtv) {
-        revert LTVTooLow(targetLtv, currentLtv);
-    }
-
-    uint256 collateralToGetFromFlashloanInToken = getCollateralToGetFromFlashloanInToken(aToken, lentTokenAmount, targetLtv, msg.sender);
-    // @dev: safe transfer the lent token to the contract
-//    IERC20(underlyingAsset).safeTransferFrom(msg.sender, address(this), lentTokenAmount);
-
-    // @dev: prepare the flashloan
-    // @notice: we need to approve the pool to spend the collateral token
-    IERC20(underlyingAsset).approve(address(pool), collateralToGetFromFlashloanInToken);
-
-    // @dev: execute the flashloan
-    address[] memory assets = new address[](1);
-    assets[0] = underlyingAsset;
-    uint256[] memory amounts = new uint256[](1);
-    amounts[0] = collateralToGetFromFlashloanInToken;
-    uint256[] memory interestRateModes = new uint256[](1);
-    interestRateModes[0] = 0; // NONE mode for regular flashloan
-    address onBehalfOf = msg.sender;
-    bytes memory params = "";
-    uint16 referralCode = 0;
-    pool.flashLoan(
-        address(this),
-        assets,
-        amounts,
-        interestRateModes,
-        onBehalfOf,
-        params,
-        referralCode
-    );
-}
-
-// @param aToken: aToken to to loop with
-// @param lentTokenAmount: amount of the lent token
-// @param targetLtv: target LTV to reach with a mantissa of 10000
-// @notice: returns the amount of tokens to get from flashloan in tokens
-function getCollateralToGetFromFlashloanInToken(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, address user) public view returns (uint256) {
-    console.log("--------------------------------");
-    console.log("aToken", address(aToken));
-    console.log("token", address(aToken.UNDERLYING_ASSET_ADDRESS()));
-    console.log("lentTokenAmount", lentTokenAmount);
-    console.log("targetLtv", targetLtv);
-    console.log("user", user);
-    console.log("--------------------------------");
-
-    // @dev: get the target collateral in tokens. This is the lentTokenAmount x the leverage factor
-    uint256 targetCollateralInToken = lentTokenAmount / (10000 - targetLtv) * 10000;
-    console.log("targetCollateralInToken", targetCollateralInToken);
-    
-    // @dev: get the current collateral in base
-    (uint256 totalCollateralBase,,,,,) = aToken.POOL().getUserAccountData(user);
-    console.log("totalCollateralBase", totalCollateralBase);
-
-    // @dev: get the price of the token in base currency
-    // @notice: Eth mantissa is 18. `getAssetPrice` mantissa is 18 as well
-    // @notice: eg:
+        // @dev: get the price of the token in base currency
+        // @notice: Eth mantissa is 18. `getAssetPrice` mantissa is 18 as well
+        // @notice: eg:
         // - 1 ETH (base currency) = 2000 USDeq.
         // - 1 BTC = 80000 USDeq.
         // => getAssetPrice(BTC) = 80000 / 2000 x 10^18 = 4000000000000000000000000
-    IPriceOracle priceOracle = IPriceOracle(aToken.POOL().ADDRESSES_PROVIDER().getPriceOracle());
-    
-    uint256 tokenPrice = priceOracle.getAssetPrice(aToken.UNDERLYING_ASSET_ADDRESS());
-    if (tokenPrice == 0) {
-        //revert TokenPriceZeroOrUnknown(address(aToken));
+        IPriceOracle priceOracle = IPriceOracle(aToken.POOL().ADDRESSES_PROVIDER().getPriceOracle());
+
+        uint256 tokenPrice = priceOracle.getAssetPrice(aToken.UNDERLYING_ASSET_ADDRESS());
+        if (tokenPrice == 0) {
+            revert TokenPriceZeroOrUnknown(address(aToken));
+        }
+        console.log("tokenPrice", tokenPrice);
+
+        // @dev: get the current collateral in tokens
+        uint256 totalCollateralInToken = totalCollateralBase / tokenPrice * 10 ** 18;
+        console.log("totalCollateralInToken", totalCollateralInToken);
+
+        uint256 collateralToGetFromFlashloanInToken;
+        if (totalCollateralInToken + lentTokenAmount >= targetCollateralInToken) {
+            // @dev: if the total collateral in tokens + the lent token amount is greater than the target collateral in tokens, we don't need to get any collateral from flashloan
+            collateralToGetFromFlashloanInToken = 0;
+        } else {
+            // @dev: get the amount of collateral to get from flashloan
+            // @notice: we need to subtract the lentTokenAmount from the total collateral in tokens because it will contribute to the collateral in the next flashloan
+            collateralToGetFromFlashloanInToken = targetCollateralInToken - totalCollateralInToken - lentTokenAmount;
+        }
+        console.log("collateralToGetFromFlashloanInToken", collateralToGetFromFlashloanInToken);
+
+        return collateralToGetFromFlashloanInToken;
     }
-    console.log("tokenPrice", tokenPrice);
-    
-    // @dev: get the current collateral in tokens   
-    uint256 totalCollateralInToken = totalCollateralBase / tokenPrice * 10 ** 18;
-    console.log("totalCollateralInToken", totalCollateralInToken);
-    
-    // @dev: get the amount of collateral to get from flashloan
-    // @notice: we need to subtract the lentTokenAmount from the total collateral in tokens because it will contribute to the collateral in the next flashloan
-    uint256 collateralToGetFromFlashloanInToken = targetCollateralInToken - totalCollateralInToken - lentTokenAmount;
-    console.log("collateralToGetFromFlashloanInToken", collateralToGetFromFlashloanInToken);
-    
-    return collateralToGetFromFlashloanInToken;
-}
 
-function executeOperation(
-    address[] calldata assets,
-    uint256[] calldata amounts,
-    uint256[] calldata premiums,
-    address initiator,
-    bytes calldata params
-) external returns (bool) {
-    // require(msg.sender == address(POOL), "Caller must be pool");
-    // require(assets.length == 1, "Only single asset flash loan supported");
-    // require(initiator == address(this), "Initiator must be this contract");
+    function executeOperation(
+        address[] calldata assets,
+        uint256[] calldata amounts,
+        uint256[] calldata premiums,
+        address initiator,
+        bytes calldata params
+    ) external returns (bool) {
+        // require(msg.sender == address(POOL), "Caller must be pool");
+        // require(assets.length == 1, "Only single asset flash loan supported");
+        // require(initiator == address(this), "Initiator must be this contract");
 
-    // address asset = assets[0];
-    // uint256 amount = amounts[0];
-    // uint256 premium = premiums[0];
+        // address asset = assets[0];
+        // uint256 amount = amounts[0];
+        // uint256 premium = premiums[0];
 
-    // // Supply the borrowed amount to the pool
-    // IERC20(asset).approve(address(POOL), amount);
-    // POOL.supply(asset, amount, address(this), 0);
+        // // Supply the borrowed amount to the pool
+        // IERC20(asset).approve(address(POOL), amount);
+        // POOL.supply(asset, amount, address(this), 0);
 
-    // // Approve the pool to spend the borrowed amount plus premium
-    // IERC20(asset).approve(address(POOL), amount + premium);
+        // // Approve the pool to spend the borrowed amount plus premium
+        // IERC20(asset).approve(address(POOL), amount + premium);
 
-    return true;
-}
+        return true;
+    }
 }

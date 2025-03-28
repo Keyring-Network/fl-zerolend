@@ -37,14 +37,11 @@ contract DeployMockTest is Test {
         // Setup users
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
-
     }
 
     function test_DepositsAndBorrows() public {
-
         assertEq(aWeth.UNDERLYING_ASSET_ADDRESS(), address(weth));
         assertEq(aUsdc.UNDERLYING_ASSET_ADDRESS(), address(usdc));
-
 
         // Mint tokens to users
         weth.mint(alice, 12 ether);
@@ -95,7 +92,6 @@ contract DeployMockTest is Test {
         );
         vm.stopPrank();
 
-
         // Log Alice's final account data
         (totalCollateralBase, totalDebtBase, availableBorrowsBase, currentLiquidationThreshold, ltv, healthFactor) =
             pool.getUserAccountData(alice);
@@ -142,12 +138,11 @@ contract DeployMockTest is Test {
         vm.stopPrank();
 
         // Test price oracle integration with pool
-        (uint256 totalCollateralBase,,,,, ) = pool.getUserAccountData(alice);
-        
+        (uint256 totalCollateralBase,,,,,) = pool.getUserAccountData(alice);
+
         // Verify that the price oracle is being used correctly in calculations
         // When Alice deposits 12 WETH, the total collateral in base currency should be:
         // 12 WETH * 2000 USDeq = 24000 USDeq
         vm.assertEq(totalCollateralBase, 24000e18, "Total collateral should be 24000 USDeq");
-
     }
 }

@@ -31,7 +31,7 @@ contract LeveragedPositionManagerTest is Test {
         pool = IPool(script.market().getPool());
         aWeth = script.aWeth();
         aUsdc = script.aUsdc();
-        
+
         // Deploy the leveraged position manager
         leveragedPositionManager = new LeveragedPositionManager(address(script.registry()));
 
@@ -68,36 +68,51 @@ contract LeveragedPositionManagerTest is Test {
         vm.expectRevert();
         leveragedPositionManager.revertIfATokenNotSupported(AToken(address(0)));
     }
-    
-    function test_AmountInTokenToBorrowWithNoCollateralAlreadyExisting() public {
 
+    function test_AmountInTokenToBorrowWithNoCollateralAlreadyExisting() public {
         uint256 amountInTokenToBorrow;
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(aWeth, 12 * 10 ** weth.decimals(), 8000, address(0));
+        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+            aWeth, 12 * 10 ** weth.decimals(), 8000, address(0)
+        );
         vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals());
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(aUsdc, 34 * 10 ** usdc.decimals(), 8000, address(0));
+        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+            aUsdc, 34 * 10 ** usdc.decimals(), 8000, address(0)
+        );
         vm.assertEq(amountInTokenToBorrow, 4 * 34 * 10 ** usdc.decimals());
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(aWeth, 56 * 10 ** weth.decimals(), 0, address(0));
+        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+            aWeth, 12 * 10 ** weth.decimals(), 8000, bob
+        );
+        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals());
+
+        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+            aUsdc, 34 * 10 ** usdc.decimals(), 8000, bob
+        );
+        vm.assertEq(amountInTokenToBorrow, 4 * 34 * 10 ** usdc.decimals());
+
+        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+            aWeth, 56 * 10 ** weth.decimals(), 0, address(0)
+        );
         vm.assertEq(amountInTokenToBorrow, 0);
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(aUsdc, 78 * 10 ** usdc.decimals(), 0, address(0));
+        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+            aUsdc, 78 * 10 ** usdc.decimals(), 0, address(0)
+        );
         vm.assertEq(amountInTokenToBorrow, 0);
 
-        // TODO: fix this test with the decorator `forge-config: default.allow_internal_expect_revert = true`
+        // TODO: fix this test with the decorator `forge-config: default.allow_internal_expect_revert = true`; Probably related to https://github.com/foundry-rs/foundry/issues/3437 ?
         // vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.TokenPriceZeroOrUnknown.selector, address(0)));
-        // leveragedPositionManager.getCollateralToGetFromFlashloanInToken(IAToken(address(0)), 91 * 10 ** usdc.decimals(), 0, address(0)); 
-
+        // leveragedPositionManager.getCollateralToGetFromFlashloanInToken(AToken(address(0)), 91 * 10 ** usdc.decimals(), 0, address(0));
     }
 
-    function test_AmountInTokenToBorrowWithCollateralAlreadyExisting() public {
-
+    function test_AmountInTokenToBorrowWithExceedingCollateralAlreadyExisting() public {
         uint256 amountInTokenToBorrow;
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(aWeth, 12 * 10 ** weth.decimals(), 8000, alice);
-        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals());
+        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
+            aWeth, 12 * 10 ** weth.decimals(), 8000, alice
+        );
+        vm.assertEq(amountInTokenToBorrow, 0);
     }
-
-
 }

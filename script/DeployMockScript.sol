@@ -24,6 +24,7 @@ import "../dependencies/zerolend-1.0.0/contracts/interfaces/IVariableDebtToken.s
 import "../dependencies/zerolend-1.0.0/contracts/flashloan/interfaces/IFlashLoanReceiver.sol";
 import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/types/ConfiguratorInputTypes.sol";
 import "../dependencies/zerolend-1.0.0/contracts/protocol/configuration/ACLManager.sol";
+import "../dependencies/zerolend-1.0.0/contracts/interfaces/IAaveIncentivesController.sol";
 
 contract DeployMockScript is Script {
     function setUp() public {}
@@ -71,7 +72,7 @@ contract DeployMockScript is Script {
         market.setPoolImpl(address(new Pool(market)));
         IPool pool = IPool(market.getPool());
 
-        // 10. Deploy tokens for WETH & USD reserve
+        // 9. Deploy tokens for WETH & USD reserve
         aWeth = new AToken(pool);
         aUsdc = new AToken(pool);
         StableDebtToken wethStableDebtToken = new StableDebtToken(pool);
@@ -79,7 +80,30 @@ contract DeployMockScript is Script {
         StableDebtToken usdcStableDebtToken = new StableDebtToken(pool);
         VariableDebtToken usdcVariableDebtToken = new VariableDebtToken(pool);
 
-        // 11. Deploy interest rate strategies
+        // Initialize aTokens
+        aWeth.initialize(
+            pool,
+            address(this), // treasury
+            address(weth), // underlying asset
+            IAaveIncentivesController(address(0)), // incentives controller
+            18, // decimals
+            "ZeroLend WETH",
+            "zWETH",
+            bytes("")
+        );
+
+        aUsdc.initialize(
+            pool,
+            address(this), // treasury
+            address(usdc), // underlying asset
+            IAaveIncentivesController(address(0)), // incentives controller
+            6, // decimals
+            "ZeroLend USDC",
+            "zUSDC",
+            bytes("")
+        );
+
+        // 10. Deploy interest rate strategies
         IDefaultInterestRateStrategy wethStrategy = new DefaultReserveInterestRateStrategy(
             IPoolAddressesProvider(address(market)),
             0.8e27, // optimal utilization
@@ -105,7 +129,7 @@ contract DeployMockScript is Script {
             0.6e27 // optimal stable to total debt ratio
         );
 
-        // 12. Initialize reserves
+        // 11. Initialize reserves
         ConfiguratorInputTypes.InitReserveInput[] memory initInputs = new ConfiguratorInputTypes.InitReserveInput[](2);
 
         initInputs[0] = ConfiguratorInputTypes.InitReserveInput({
@@ -150,7 +174,7 @@ contract DeployMockScript is Script {
 
         configuratorProxy.initReserves(initInputs);
 
-        // 13. Configure reserves
+        // 12. Configure reserves
         configuratorProxy.configureReserveAsCollateral(
             address(weth),
             8000, // 80% LTV
@@ -164,7 +188,7 @@ contract DeployMockScript is Script {
             10500 // 105% liquidation bonus
         );
 
-        // 14. Enable borrowing and set reserve factor
+        // 13. Enable borrowing and set reserve factor
         configuratorProxy.setReserveBorrowing(address(weth), true);
         configuratorProxy.setReserveFactor(address(weth), 1000); // 10%
         configuratorProxy.setReserveBorrowing(address(usdc), true);
