@@ -23,7 +23,7 @@ import "forge-std/console.sol";
 /// - Total borrowed = 5000 * 0.8 = 4000 USD
 /// The X amount covers the difference between the total lent and the total borrowed.
 
-contract LeveragedPositionManager {
+contract LeveragedPositionManager is IFlashLoanReceiver {
     using SafeERC20 for IERC20;
 
     error TokenNotSupported(address tokenAddress);
@@ -31,6 +31,11 @@ contract LeveragedPositionManager {
     error InsufficientLentTokenBalance(address tokenAddress, uint256 balance);
     error LTVTooHigh(uint256 requestedLTV, uint256 maxPoolLTV);
     error LTVTooLow(uint256 targetLTV, uint256 currentLTV);
+    error TransientStorageMismatch();
+    // @dev: fake transient storage to ensure EVM backward compatibility
+    IPool public transientPool;
+    IPoolAddressesProvider public transientAddressesProvider;
+    address public transientUser;
 
     IPoolAddressesProviderRegistry public immutable poolAddressesProviderRegistry;
 
@@ -62,10 +67,6 @@ contract LeveragedPositionManager {
     /// @param targetLtv The desired LTV value
     /// @param user The address of the user whose LTV is being validated
     /// @return The validated target LTV (might be adjusted to max LTV if not specified)
-    /// @notice: validate the target LTV and return the final target LTV
-    /// @notice: if the target LTV is 0, it will be set to the max LTV of the pool
-    /// @notice: if the target LTV is greater than the max LTV of the pool, it will revert
-    /// @notice: if the target LTV is lower than the current LTV, it will revert
     function validateLtv(AToken aToken, uint256 targetLtv, address user) public view returns (uint256) {
         IPool pool = AToken(address(aToken)).POOL();
         address underlyingAsset = aToken.UNDERLYING_ASSET_ADDRESS();
@@ -97,12 +98,23 @@ contract LeveragedPositionManager {
     // @notice: this function is used to take a leveraged position by looping lending and borrowing using the same token
     // @notice: not all prerequisites are checked here (pool liquidity availability, token used as collateral, IRMode, etc.) as it will be called by the core contracts. Only basic prerequisites are checked here (token user's balance and ltv limit to have early revert)
     function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, bool interestRateMode) public {
+
+
         // @dev: revert if the token is not supported
         revertIfATokenNotSupported(aToken);
 
         // @dev: check if the token amount held by the user is above the amount to lend
         if (aToken.balanceOf(address(this)) < lentTokenAmount) {
             revert InsufficientLentTokenBalance(address(aToken), lentTokenAmount);
+        }
+
+        // @dev: set the transient storage
+        if (address(transientPool) == address(0) && address(transientAddressesProvider) == address(0) && address(transientUser) == address(0)) {
+            transientPool = aToken.POOL();
+            transientAddressesProvider = transientPool.ADDRESSES_PROVIDER();
+            transientUser = msg.sender;
+        } else {
+            revert TransientStorageMismatch();
         }
 
         // @dev: validate the target LTV and get the final target LTV
@@ -196,21 +208,35 @@ contract LeveragedPositionManager {
         address initiator,
         bytes calldata params
     ) external returns (bool) {
-        // require(msg.sender == address(POOL), "Caller must be pool");
-        // require(assets.length == 1, "Only single asset flash loan supported");
-        // require(initiator == address(this), "Initiator must be this contract");
+        require(msg.sender == address(transientPool), "Caller must be pool");
+        require(assets.length == 1, "Only single asset flash loan supported");
+        require(initiator == address(this), "Initiator must be this contract");
+        require(address(AToken(assets[0]).POOL()) == address(transientPool), "Pool must be the same");
 
-        // address asset = assets[0];
-        // uint256 amount = amounts[0];
-        // uint256 premium = premiums[0];
+        IERC20 token = IERC20(assets[0]);
+        uint256 amount = amounts[0];
+        uint256 premium = premiums[0];
 
-        // // Supply the borrowed amount to the pool
-        // IERC20(asset).approve(address(POOL), amount);
-        // POOL.supply(asset, amount, address(this), 0);
-
-        // // Approve the pool to spend the borrowed amount plus premium
-        // IERC20(asset).approve(address(POOL), amount + premium);
+        console.log("token", address(token));
+        console.log("user balance", token.balanceOf(transientUser));
+        console.log("amount borrowed", amount);
+        console.log("premium to pay", premium);
+        
 
         return true;
+    }
+
+    function ADDRESSES_PROVIDER() external view returns (IPoolAddressesProvider) {
+        if (address(transientAddressesProvider) == address(0)) {
+            revert TransientStorageMismatch();
+        }
+        return transientAddressesProvider;
+    }
+
+    function POOL() external view returns (IPool) {
+        if (address(transientPool) == address(0)) {
+            revert TransientStorageMismatch();
+        }
+        return transientPool;
     }
 }
