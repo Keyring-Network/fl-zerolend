@@ -27,6 +27,7 @@ contract LeveragedPositionManager {
 using SafeERC20 for IERC20;
 
 error TokenNotSupported(address tokenAddress);
+error TokenPriceZeroOrUnknown(address tokenAddress);
 error InsufficientLentTokenBalance(address tokenAddress, uint256 balance);
 error LTVTooHigh(uint256 requestedLTV, uint256 maxPoolLTV);
 error LTVTooLow(uint256 targetLTV, uint256 currentLTV);
@@ -40,7 +41,7 @@ constructor(address _poolAddressesProviderRegistry) {
 // @param aToken: aToken to check if it is supported
 // @notice: returns true if the aToken is supported, false otherwise
 function revertIfATokenNotSupported(AToken aToken) public view {
-    IPool pool = aToken.POOL();
+    IPool pool = AToken(address(aToken)).POOL();
     IPoolAddressesProvider addressesProvider = pool.ADDRESSES_PROVIDER();
     address[] memory poolAdressesProviders = poolAddressesProviderRegistry.getAddressesProvidersList();
 
@@ -73,7 +74,7 @@ function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv,
         revert InsufficientLentTokenBalance(address(aToken), lentTokenAmount);
     }
 
-    IPool pool = aToken.POOL();
+    IPool pool = AToken(address(aToken)).POOL();
     address underlyingAsset = aToken.UNDERLYING_ASSET_ADDRESS();
     DataTypes.ReserveData memory reserveData = pool.getReserveData(underlyingAsset);
     uint256 maxLTV = (reserveData.configuration.data & 0xFFFF);
@@ -91,7 +92,7 @@ function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv,
         revert LTVTooLow(targetLtv, currentLtv);
     }
 
-    uint256 collateralToGetFromFlashloanInToken = getCollateralToGetFromFlashloanInToken(aToken, lentTokenAmount, targetLtv);
+    uint256 collateralToGetFromFlashloanInToken = getCollateralToGetFromFlashloanInToken(aToken, lentTokenAmount, targetLtv, msg.sender);
     // @dev: safe transfer the lent token to the contract
 //    IERC20(underlyingAsset).safeTransferFrom(msg.sender, address(this), lentTokenAmount);
 
@@ -124,14 +125,21 @@ function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv,
 // @param lentTokenAmount: amount of the lent token
 // @param targetLtv: target LTV to reach with a mantissa of 10000
 // @notice: returns the amount of tokens to get from flashloan in tokens
-function getCollateralToGetFromFlashloanInToken(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv) public view returns (uint256) {
-    
+function getCollateralToGetFromFlashloanInToken(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, address user) public view returns (uint256) {
+    console.log("--------------------------------");
+    console.log("aToken", address(aToken));
+    console.log("token", address(aToken.UNDERLYING_ASSET_ADDRESS()));
+    console.log("lentTokenAmount", lentTokenAmount);
+    console.log("targetLtv", targetLtv);
+    console.log("user", user);
+    console.log("--------------------------------");
+
     // @dev: get the target collateral in tokens. This is the lentTokenAmount x the leverage factor
     uint256 targetCollateralInToken = lentTokenAmount / (10000 - targetLtv) * 10000;
     console.log("targetCollateralInToken", targetCollateralInToken);
     
     // @dev: get the current collateral in base
-    (uint256 totalCollateralBase,,,,,) = aToken.POOL().getUserAccountData(msg.sender);
+    (uint256 totalCollateralBase,,,,,) = aToken.POOL().getUserAccountData(user);
     console.log("totalCollateralBase", totalCollateralBase);
 
     // @dev: get the price of the token in base currency
@@ -141,7 +149,11 @@ function getCollateralToGetFromFlashloanInToken(AToken aToken, uint256 lentToken
         // - 1 BTC = 80000 USDeq.
         // => getAssetPrice(BTC) = 80000 / 2000 x 10^18 = 4000000000000000000000000
     IPriceOracle priceOracle = IPriceOracle(aToken.POOL().ADDRESSES_PROVIDER().getPriceOracle());
+    
     uint256 tokenPrice = priceOracle.getAssetPrice(aToken.UNDERLYING_ASSET_ADDRESS());
+    if (tokenPrice == 0) {
+        //revert TokenPriceZeroOrUnknown(address(aToken));
+    }
     console.log("tokenPrice", tokenPrice);
     
     // @dev: get the current collateral in tokens   

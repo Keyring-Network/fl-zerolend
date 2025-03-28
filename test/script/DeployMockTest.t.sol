@@ -7,6 +7,7 @@ import "../../dependencies/zerolend-1.0.0/contracts/mocks/tokens/MintableERC20.s
 import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPool.sol";
 import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IAToken.sol";
 import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProvider.sol";
+import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPriceOracle.sol";
 
 contract DeployMockTest is Test {
     DeployMockScript public script;
@@ -40,6 +41,11 @@ contract DeployMockTest is Test {
     }
 
     function test_DepositsAndBorrows() public {
+
+        assertEq(aWeth.UNDERLYING_ASSET_ADDRESS(), address(weth));
+        assertEq(aUsdc.UNDERLYING_ASSET_ADDRESS(), address(usdc));
+
+
         // Mint tokens to users
         weth.mint(alice, 12 ether);
         weth.mint(bob, 34 ether);
@@ -110,5 +116,38 @@ contract DeployMockTest is Test {
         vm.assertEq(currentLiquidationThreshold, 8250); // 82.50% threshold
         vm.assertEq(ltv, 8000); // 80% LTV
         vm.assertEq(healthFactor, 1289062500000000000); // Health factor based on collateral and debt
+    }
+
+    function test_PriceOracleSetup() public {
+        // Get the price oracle from the market
+        address priceOracleAddress = market.getPriceOracle();
+        IPriceOracle oracle = IPriceOracle(priceOracleAddress);
+
+        // Verify WETH price
+        uint256 wethPrice = oracle.getAssetPrice(aWeth.UNDERLYING_ASSET_ADDRESS());
+        console.log("wethAddress", aWeth.UNDERLYING_ASSET_ADDRESS());
+        vm.assertEq(wethPrice, 2000e18, "WETH price should be 2000 USDeq");
+
+        // Verify USDC price
+        uint256 usdcPrice = oracle.getAssetPrice(aUsdc.UNDERLYING_ASSET_ADDRESS());
+        console.log("usdcAddress", aUsdc.UNDERLYING_ASSET_ADDRESS());
+        vm.assertEq(usdcPrice, 1e18, "USDC price should be 1 USDeq");
+
+        // Setup Alice's collateral
+        weth.mint(alice, 12 ether);
+        vm.startPrank(alice);
+        weth.approve(address(pool), type(uint256).max);
+        pool.supply(address(weth), 12 ether, alice, 0);
+        pool.setUserUseReserveAsCollateral(address(weth), true);
+        vm.stopPrank();
+
+        // Test price oracle integration with pool
+        (uint256 totalCollateralBase,,,,, ) = pool.getUserAccountData(alice);
+        
+        // Verify that the price oracle is being used correctly in calculations
+        // When Alice deposits 12 WETH, the total collateral in base currency should be:
+        // 12 WETH * 2000 USDeq = 24000 USDeq
+        vm.assertEq(totalCollateralBase, 24000e18, "Total collateral should be 24000 USDeq");
+
     }
 }
