@@ -39,7 +39,7 @@ contract LeveragedPositionManagerTest is Test {
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
         weth.mint(alice, 3000 * 10 ** weth.decimals());
-        weth.mint(bob, 10 * 10 ** weth.decimals());
+        weth.mint(bob, 1000000 * 10 ** weth.decimals());
         usdc.mint(alice, 5600000000 * 10 ** usdc.decimals());
         usdc.mint(bob, 1000000 * 10 ** usdc.decimals());
         // Alice fills in the pool
@@ -54,7 +54,8 @@ contract LeveragedPositionManagerTest is Test {
         vm.startPrank(bob);
         weth.approve(address(pool), type(uint256).max);
         usdc.approve(address(pool), type(uint256).max);
-        //pool.setUserUseReserveAsCollateral(address(weth), true);
+        weth.approve(address(leveragedPositionManager), type(uint256).max);
+        usdc.approve(address(leveragedPositionManager), type(uint256).max);
         vm.stopPrank();
     }
 
@@ -187,8 +188,10 @@ contract LeveragedPositionManagerTest is Test {
         // Get account data before taking position
         (uint256 totalCollateralBaseBefore, uint256 totalDebtBaseBefore,,,,) = pool.getUserAccountData(bob);
         
-        // Take the position with 80% LTV and variable rate, using 10 WETH
+        // Take the position with 80% LTV and variable rate, using 1 WETH
         vm.startPrank(bob);
+        pool.supply(address(weth), 1 * 10 ** weth.decimals(), bob, 0);
+        pool.setUserUseReserveAsCollateral(address(weth), true);
         leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), 8000, 2);
         vm.stopPrank();
         
