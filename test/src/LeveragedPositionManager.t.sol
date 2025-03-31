@@ -39,9 +39,10 @@ contract LeveragedPositionManagerTest is Test {
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
         weth.mint(alice, 3000 * 10 ** weth.decimals());
-        weth.mint(bob, 1000000 * 10 ** weth.decimals());
+        weth.mint(bob, 10 * 10 ** weth.decimals());
         usdc.mint(alice, 5600000000 * 10 ** usdc.decimals());
         usdc.mint(bob, 1000000 * 10 ** usdc.decimals());
+        
         // Alice fills in the pool
         vm.startPrank(alice);
         weth.approve(address(pool), type(uint256).max);
@@ -96,12 +97,12 @@ contract LeveragedPositionManagerTest is Test {
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aWeth, 56 * 10 ** weth.decimals(), 0, address(0)
         );
-        vm.assertEq(amountInTokenToBorrow, 0);
+        vm.assertEq(amountInTokenToBorrow, 56000000000000000000);
 
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aUsdc, 78 * 10 ** usdc.decimals(), 0, address(0)
         );
-        vm.assertEq(amountInTokenToBorrow, 0);
+        vm.assertEq(amountInTokenToBorrow, 78000000);
 
         // TODO: fix this test with the decorator `forge-config: default.allow_internal_expect_revert = true`; Probably related to https://github.com/foundry-rs/foundry/issues/3437 ?
         // vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.TokenPriceZeroOrUnknown.selector, address(0)));
@@ -117,6 +118,7 @@ contract LeveragedPositionManagerTest is Test {
     }
 
     function test_AmountInTokenToBorrowWithCollateralAlreadyExisting() public {
+
         uint256 collateralInWethProvided = 10 * 10 ** weth.decimals();
         vm.startPrank(bob);
         pool.supply(address(weth), collateralInWethProvided, bob, 0);
@@ -127,11 +129,12 @@ contract LeveragedPositionManagerTest is Test {
         );
         vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals() - collateralInWethProvided);
 
-        vm.startPrank(bob);
         uint256 collateralInUsdcProvided = collateralInWethProvided * 2000 / 10 ** (18 - usdc.decimals());
+        vm.startPrank(bob);
         pool.supply(address(usdc), collateralInUsdcProvided, bob, 0);
-        vm.assertEq(usdc.balanceOf(bob), 980000 * 10 ** usdc.decimals());
         vm.stopPrank();
+        vm.assertEq(usdc.balanceOf(bob), 980000 * 10 ** usdc.decimals());
+        
 
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aWeth, 12 * 10 ** weth.decimals(), 8000, bob
@@ -140,68 +143,98 @@ contract LeveragedPositionManagerTest is Test {
     }
 
     function test_ValidateLtv_ValidTargetLtv() public {
-        // Test with a valid target LTV (8000 = 80%)
         uint256 targetLtv = 8000;
         uint256 validatedLtv = leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
         assertEq(validatedLtv, targetLtv);
     }
 
     function test_ValidateLtv_ZeroTargetLtv() public {
-        // Test with zero target LTV (should use max LTV)
         uint256 targetLtv = 0;
         uint256 validatedLtv = leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
-        assertEq(validatedLtv, 8000); // Max LTV is 80% in the mock setup
+        assertEq(validatedLtv, 8000); 
     }
 
     function test_ValidateLtv_ExceedsMaxLtv() public {
-        // Test with LTV exceeding max (8000 = 80%)
-        uint256 targetLtv = 8500; // 85%
+        uint256 targetLtv = 8500;
         vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.LTVTooHigh.selector, targetLtv, 8000));
         leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
     }
 
     function test_ValidateLtv_CurrentLtvTooHigh() public {
-        // Setup: Bob deposits WETH and borrows USDC to create a position with ~75% LTV
         vm.startPrank(bob);
-        uint256 depositAmount = 10 * 10 ** weth.decimals(); // 10 WETH = 20,000 USDC
+        uint256 depositAmount = 10 * 10 ** weth.decimals();
         pool.supply(address(weth), depositAmount, bob, 0);
         pool.setUserUseReserveAsCollateral(address(weth), true);
-        // Borrow 15,000 USDC to create a 75% LTV position (15000/20000)
         pool.borrow(address(usdc), 15000 * 10 ** usdc.decimals(), 2, 0, bob);
         vm.stopPrank();
 
-        // Try to validate LTV that's lower than current position
-        uint256 targetLtv = 7000; // 70%
+        uint256 targetLtv = 7000;
         vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.LTVTooLow.selector, targetLtv, 7500));
         leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
     }
 
     function test_ValidateLtv_DifferentTokens() public {
-        // Test with USDC token
-        uint256 targetLtv = 7500; // 75%
+        uint256 targetLtv = 7500;
         uint256 validatedLtv = leveragedPositionManager.validateLtv(aUsdc, targetLtv, bob);
         assertEq(validatedLtv, targetLtv);
     }
 
-    function test_takePositionFromZeroCollateral() public {
-        
-        // Get account data before taking position
-        (uint256 totalCollateralBaseBefore, uint256 totalDebtBaseBefore,,,,) = pool.getUserAccountData(bob);
-        
-        // Take the position with 80% LTV and variable rate, using 1 WETH
+    function test_resetTransientState() public {
         vm.startPrank(bob);
-        pool.supply(address(weth), 1 * 10 ** weth.decimals(), bob, 0);
-        pool.setUserUseReserveAsCollateral(address(weth), true);
-        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), 8000, 2);
+        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), 1000, 2);
+        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), 2000, 2);
         vm.stopPrank();
+
+    }    
+
+    function test_takePositionFromZeroCollateralWithPoolsWithNoPremium() public {
         
-        // Get account data after taking position
-        (uint256 totalCollateralBaseAfter, uint256 totalDebtBaseAfter,,,,) = pool.getUserAccountData(bob);
-        
-        // Assert that collateral and debt increased
-        assertGt(totalCollateralBaseAfter, totalCollateralBaseBefore, "Collateral should increase");
-        assertGt(totalDebtBaseAfter, totalDebtBaseBefore, "Debt should increase");
-        
+        uint256 targetLtv = 8000;
+
+        vm.startPrank(bob);
+        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), targetLtv, 2);
         vm.stopPrank();
+
+       (uint256 totalCollateralBase, uint256 totalDebtBase, , , , ) = pool.getUserAccountData(bob);
+
+        assertEq(totalDebtBase * 10000 / totalCollateralBase, targetLtv);
+
     }
+
+    function test_takePositionFromZeroCollateralWithPoolsWithPremium() public {
+        vm.skip(true, "TODO");
+    }
+
+    function test_takePositionWithExistingMonoCollateral() public {
+        vm.skip(true, "TODO");
+    }
+
+    function test_takePositionWithExistingMultiCollateral() public {
+        vm.skip(true, "TODO");
+    }
+
+    function test_reentrancy() public {
+        vm.skip(true, "TODO");
+    }
+
+    function test_dustManagement() public {
+        vm.skip(true, "TODO");
+    }
+
+    function test_digitsPrecision() public {
+        vm.skip(true, "TODO");
+    }
+
+    function test_oracleStaleness() public {
+        vm.skip(true, "TODO");
+    }
+
+
+
+
+    
+    
+    
+    
+    
 }

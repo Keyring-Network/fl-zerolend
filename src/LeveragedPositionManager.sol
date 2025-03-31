@@ -11,7 +11,6 @@ import "../dependencies/zerolend-1.0.0/contracts/interfaces/IScaledBalanceToken.
 import "../dependencies/zerolend-1.0.0/contracts/flashloan/interfaces/IFlashLoanReceiver.sol";
 import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/types/DataTypes.sol";
 import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPriceOracle.sol";
-import "forge-std/console.sol";
 /// For a brand new position (0 collateral, 0 borrowed), given a LTV, a user with an amount X of tokens can take the following position:
 /// - Leverage factor = 1 / (1 - LTV)
 /// - Total lent = X * leverage factor
@@ -32,6 +31,16 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     error LTVTooHigh(uint256 requestedLTV, uint256 maxPoolLTV);
     error LTVTooLow(uint256 targetLTV, uint256 currentLTV);
     error TransientStorageMismatch();
+    error CallerNotPool(address caller, address expectedPool);
+    error UserMismatch(address provided, address expected);
+    error MultipleAssetsNotSupported(uint256 assetCount);
+    error InitiatorMismatch(address provided, address expected);
+    error PoolMismatch(address provided, address expected);
+    error NonZeroAllowance(uint256 currentAllowance);
+    error BalanceMismatch(uint256 current, uint256 expected);
+    error InvalidFlashLoanAmount(uint256 amount, uint256 premium);
+    error InvalidBorrowAmount(uint256 amountToBorrow, uint256 amountToRepay, uint256 currentBalance);
+
     // @dev: fake transient storage to ensure EVM backward compatibility
     IPool public transientPool;
     IPoolAddressesProvider public transientAddressesProvider;
@@ -101,11 +110,14 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     // @notice: not all prerequisites are checked here (pool liquidity availability, token used as collateral, IRMode, etc.) as it will be called by the core contracts. Only basic prerequisites are checked here (token user's balance and ltv limit to have early revert)
     function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, uint256 interestRateMode) public {
 
-
         // @dev: revert if the token is not supported
         revertIfATokenNotSupported(aToken);
 
-        // @dev: check if the token amount held by the user is above the amount to lend
+        /// @dev: Pre-flashloan balances, captured to prevent the contract from being unusable if someone sends tokens to this contract
+        uint256 underlyingBalanceBeforeFlashLoan = IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)); 
+        uint256 aTokenBalanceBeforeFlashLoan = aToken.balanceOf(address(this));
+
+        // @dev: transfer the lent token from the user to this contract
         IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).transferFrom(msg.sender, address(this), lentTokenAmount);
 
         // @dev: set the transient storage
@@ -135,10 +147,43 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         bytes memory params = abi.encode(msg.sender, aToken.POOL(), targetLtv, interestRateMode);
         uint16 referralCode = 0;
 
-        console.log("user balance BEFORE", IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(transientUser));
-        console.log("This balance BEFORE", IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)));
-        
+        /// @dev: revert if the allowance is not 0
+        if (IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL())) != 0) {
+            revert NonZeroAllowance(IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL())));
+        }
+
+        /// @dev: execute the flashloan
         aToken.POOL().flashLoan(address(this), assets, amounts, interestRateModes, address(this), params, referralCode);
+
+        /// @dev: post-flashloan check that the balances of underlying are the same
+        if (IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)) != underlyingBalanceBeforeFlashLoan) {
+            revert BalanceMismatch(
+                IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)),
+                underlyingBalanceBeforeFlashLoan
+            );
+        }
+
+        /// @dev: post-flashloan check that the balances of aToken are the same
+        if (aToken.balanceOf(address(this)) != aTokenBalanceBeforeFlashLoan) {
+            revert BalanceMismatch(
+                aToken.balanceOf(address(this)),
+                aTokenBalanceBeforeFlashLoan
+            );
+        }
+
+        /// @dev: post-flashloan check that the allowance is 0
+        if (IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL())) != 0) {
+            revert NonZeroAllowance(
+                IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL()))
+            );
+        }
+
+
+        transientPool = IPool(address(0));
+        transientAddressesProvider = IPoolAddressesProvider(address(0));
+        transientUser = address(0);
+
+        
     }
 
     // @param aToken: aToken to to loop with
@@ -153,13 +198,10 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     ) public view returns (uint256) {
         
         // @dev: get the target collateral in tokens. This is the lentTokenAmount x the leverage factor
-        // TODO: check if this is correct
         uint256 targetCollateralInToken = lentTokenAmount / (10000 - targetLtv) * 10000;
-        console.log("targetCollateralInToken", targetCollateralInToken);
 
         // @dev: get the current collateral in base
         (uint256 totalCollateralBase,,,,,) = aToken.POOL().getUserAccountData(user);
-        console.log("totalCollateralBase", totalCollateralBase);
 
         // @dev: get the price of the token in base currency
         // @notice: Eth mantissa is 18. `getAssetPrice` mantissa is 18 as well
@@ -173,11 +215,9 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         if (tokenPrice == 0) {
             revert TokenPriceZeroOrUnknown(address(aToken));
         }
-        console.log("tokenPrice", tokenPrice);
 
         // @dev: get the current collateral in tokens
         uint256 totalCollateralInToken = totalCollateralBase / tokenPrice * 10 ** 18;
-        console.log("totalCollateralInToken", totalCollateralInToken);
 
         uint256 collateralToGetFromFlashloanInToken;
         if (totalCollateralInToken >= targetCollateralInToken) {
@@ -188,11 +228,11 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
             // @notice: we need to subtract the lentTokenAmount from the total collateral in tokens because it will contribute to the collateral in the next flashloan
             collateralToGetFromFlashloanInToken = targetCollateralInToken - totalCollateralInToken;
         }
-        console.log("collateralToGetFromFlashloanInToken", collateralToGetFromFlashloanInToken);
         
         return collateralToGetFromFlashloanInToken;
     }
 
+    /// @inheritdoc IFlashLoanReceiver
     function executeOperation(
         address[] calldata assets,
         uint256[] calldata amounts,
@@ -201,55 +241,50 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         bytes calldata params
     ) external returns (bool) {
         (address user, IPool pool, uint256 targetLtv, uint256 interestRateMode) = abi.decode(params, (address, IPool, uint256, uint256));
-        require(msg.sender == address(transientPool), "Caller must be pool");
-        require(user == transientUser, "User must be the same");
-        require(assets.length == 1, "Only single asset flash loan supported");
-        require(initiator == address(this), "Initiator must be this contract");
-        require(pool == transientPool, "Pool must be the same");
+        if (msg.sender != address(transientPool)) {
+            revert CallerNotPool(msg.sender, address(transientPool));
+        }
+        if (user != transientUser) {
+            revert UserMismatch(user, transientUser);
+        }
+        if (assets.length != 1) {
+            revert MultipleAssetsNotSupported(assets.length);
+        }
+        if (initiator != address(this)) {
+            revert InitiatorMismatch(initiator, address(this));
+        }
+        if (pool != transientPool) {
+            revert PoolMismatch(address(pool), address(transientPool));
+        }
 
         IERC20 token = IERC20(assets[0]);
         uint256 amount = amounts[0];
-        uint256 premium = premiums[0];
+        uint256 premium = premiums[0]; // TODO: understand why premium is 0
 
-        console.log("user balance A", token.balanceOf(transientUser) / 10 ** 18);
-        console.log("this balance A", token.balanceOf(address(this)) / 10 ** 18);
-        console.log("amount borrowed", amount / 10 ** 18);
-        console.log("premium to pay", premium / 10 ** 18);
-        
-        // TODO: remove
-        //amount = 1000;
-
-        // @dev: approve the token to be spent by the pool
-        token.approve(address(pool), type(uint256).max);
+        // @dev: approve the token for the pool
+        token.approve(address(pool), amount);
 
         // @dev: take the position
         pool.supply(address(token), amount, user, uint16(interestRateMode));
 
         // @dev: get the amount to repay
         uint256 amountToRepay = amount + premium;
-        console.log("amountToRepay", amountToRepay / 10 ** 18);
 
         // @dev: get the amount to borrow
         uint256 amountToBorrow = amountToRepay - token.balanceOf(address(this));
-        console.log("amountToBorrow", amountToBorrow / 10 ** 18);
 
         // @dev: borrow the token
         pool.borrow(address(token), amountToBorrow, interestRateMode, 0, user);
-        console.log("user balance B", token.balanceOf(transientUser) / 10 ** 18);
-        console.log("this balance B", token.balanceOf(address(this)) / 10 ** 18);
 
         // @dev: repay the flashloan
-        console.log("interestRateMode", interestRateMode);
-        token.transfer(address(pool), amountToRepay);
-        console.log("user balance C", token.balanceOf(transientUser) / 10 ** 18);
-        console.log("this balance C", token.balanceOf(address(this)) / 10 ** 18);
 
-        // @dev: remove the approval
-        token.approve(address(pool), 0);
-        
+        // @dev: set the exact allowance for the pool
+        token.approve(address(pool), amountToRepay);
+
         return true;
     }
 
+    /// @inheritdoc IFlashLoanReceiver
     function ADDRESSES_PROVIDER() external view returns (IPoolAddressesProvider) {
         if (address(transientAddressesProvider) == address(0)) {
             revert TransientStorageMismatch();
@@ -257,6 +292,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         return transientAddressesProvider;
     }
 
+    /// @inheritdoc IFlashLoanReceiver
     function POOL() external view returns (IPool) {
         if (address(transientPool) == address(0)) {
             revert TransientStorageMismatch();
