@@ -2,6 +2,14 @@
 
 A Solidity smart contract for managing leveraged positions in the Zerolend protocol.
 
+### Todo
+
+- [ ] Add tests
+- [ ] Add fuzzing
+- [ ] Docs
+- [ ] PoC UI
+- [ ] Replace imports with remappings
+
 ### Prerequisites
 
 - [Foundry](https://book.getfoundry.sh/getting-started/installation)
@@ -40,7 +48,7 @@ cp .env.example .env
 2. Deploy the contract:
 
 ```bash
-source .env && forge script script/Deploy.s.sol \
+source .env && forge script script/DeployLeveragedPositionManagerScript.sol \
     --force \
     --broadcast \
     --rpc-url $RPC_URL \

@@ -72,7 +72,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         }
     }
 
-    function tokenPrice(AToken aToken) public view returns (uint256) {
+    function getTokenPrice(AToken aToken) public view returns (uint256) {
         IPriceOracle priceOracle = IPriceOracle(aToken.POOL().ADDRESSES_PROVIDER().getPriceOracle());
 
         uint256 tokenPrice = priceOracle.getAssetPrice(aToken.UNDERLYING_ASSET_ADDRESS());
@@ -87,7 +87,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     /// @param baseAmount: amount of the base currency to convert
     /// @return tokenAmount: amount of the token
     function convertBaseToToken(AToken aToken, uint256 baseAmount) public view returns (uint256) {
-        uint256 tokenAmount = baseAmount * (10 ** aToken.decimals()) / tokenPrice(aToken);
+        uint256 tokenAmount = baseAmount * (10 ** aToken.decimals()) / getTokenPrice(aToken);
         return tokenAmount;
     }
 
@@ -164,8 +164,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         amounts[0] = collateralToGetFromFlashloanInToken;
         uint256[] memory interestRateModes = new uint256[](1);
         interestRateModes[0] = 0;
-        address onBehalfOf = msg.sender;
-        bytes memory params = abi.encode(msg.sender, aToken.POOL(), targetLtv, interestRateMode);
+        bytes memory params = abi.encode(msg.sender, aToken.POOL(), interestRateMode);
         uint16 referralCode = 0;
 
         /// @dev: revert if the allowance is not 0
@@ -236,8 +235,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         address initiator,
         bytes calldata params
     ) external returns (bool) {
-        (address user, IPool pool, uint256 targetLtv, uint256 interestRateMode) =
-            abi.decode(params, (address, IPool, uint256, uint256));
+        (address user, IPool pool, uint256 interestRateMode) = abi.decode(params, (address, IPool, uint256));
         if (msg.sender != address(transientPool)) {
             revert CallerNotPool(msg.sender, address(transientPool));
         }

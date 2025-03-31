@@ -27,8 +27,6 @@ import "../dependencies/zerolend-1.0.0/contracts/protocol/configuration/ACLManag
 import "../dependencies/zerolend-1.0.0/contracts/interfaces/IAaveIncentivesController.sol";
 
 contract DeployMockProtocolScript is Script {
-    function setUp() public {}
-
     AToken public aWeth;
     AToken public aUsdc;
     MintableERC20 public weth;
