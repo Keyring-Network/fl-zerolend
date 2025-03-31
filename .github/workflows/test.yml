@@ -24,9 +24,15 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+
+      - name: Configure Git for HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+
       - name: Install dependencies
         run: |
           forge soldeer install
+
       - name: Run Forge fmt
         run: |
           forge fmt --check
