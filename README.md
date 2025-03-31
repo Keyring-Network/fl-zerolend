@@ -1,66 +1,51 @@
-## Foundry
+## FL-Zerolend
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+A Solidity smart contract for managing leveraged positions in the Zerolend protocol.
 
-Foundry consists of:
+### Prerequisites
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+- [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- Git
 
-## Documentation
+### Installation
 
-https://book.getfoundry.sh/
+1. Clone the repository:
 
-## Usage
-
-### Build
-
-```shell
-$ forge build
+```bash
+git clone https://github.com/Keyring-Network/fl-zerolend.git
+cd fl-zerolend
 ```
 
-### Test
+2. Install dependencies:
 
-```shell
-$ forge test
+```bash
+forge soldeer install
 ```
 
-### Format
+3. Run all tests:
 
-```shell
-$ forge fmt
+```bash
+forge test --force
 ```
 
-### Gas Snapshots
+### Deployment
 
-```shell
-$ forge snapshot
+1. Copy the environment file and prepare your private key and other credentials:
+
+```bash
+cp .env.example .env
+# Edit .env with your private key and API keys
 ```
 
-### Anvil
+2. Deploy the contract:
 
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
+```bash
+source .env && forge script script/Deploy.s.sol \
+    --force \
+    --broadcast \
+    --rpc-url $RPC_URL \
+    --verify \
+    --etherscan-api-key $ETHERSCAN_API_KEY \
+    --verifier-url $ETHERSCAN_BASE_API_URL \
+    --retries 20
 ```
