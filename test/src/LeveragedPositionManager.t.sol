@@ -8,6 +8,7 @@ import {MintableERC20} from "../../dependencies/zerolend-1.0.0/contracts/mocks/t
 import {IPool} from "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPool.sol";
 import {AToken} from "../../dependencies/zerolend-1.0.0/contracts/protocol/tokenization/AToken.sol";
 import {LeveragedPositionManager} from "../../src/LeveragedPositionManager.sol";
+import {DebtTokenBase} from "../../dependencies/zerolend-1.0.0/contracts/protocol/tokenization/base/DebtTokenBase.sol";
 
 contract LeveragedPositionManagerTest is Test {
     DeployMockProtocolScript public script;
@@ -57,6 +58,14 @@ contract LeveragedPositionManagerTest is Test {
         usdc.approve(address(pool), type(uint256).max);
         weth.approve(address(leveragedPositionManager), type(uint256).max);
         usdc.approve(address(leveragedPositionManager), type(uint256).max);
+        address wethStableDebtTokenAddress = pool.getReserveData(address(weth)).stableDebtTokenAddress;
+        address wethVariableDebtTokenAddress = pool.getReserveData(address(weth)).variableDebtTokenAddress;
+        DebtTokenBase(wethStableDebtTokenAddress).approveDelegation(
+            address(leveragedPositionManager), type(uint256).max
+        );
+        DebtTokenBase(wethVariableDebtTokenAddress).approveDelegation(
+            address(leveragedPositionManager), type(uint256).max
+        );
         vm.stopPrank();
     }
 
