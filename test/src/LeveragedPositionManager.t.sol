@@ -3,14 +3,14 @@ pragma solidity ^0.8.12;
 
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
-import {DeployMockScript} from "../../script/DeployMockScript.sol";
+import {DeployMockProtocolScript} from "../../script/DeployMockProtocolScript.sol";
 import {MintableERC20} from "../../dependencies/zerolend-1.0.0/contracts/mocks/tokens/MintableERC20.sol";
 import {IPool} from "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPool.sol";
 import {AToken} from "../../dependencies/zerolend-1.0.0/contracts/protocol/tokenization/AToken.sol";
 import {LeveragedPositionManager} from "../../src/LeveragedPositionManager.sol";
 
 contract LeveragedPositionManagerTest is Test {
-    DeployMockScript public script;
+    DeployMockProtocolScript public script;
     MintableERC20 public weth;
     MintableERC20 public usdc;
     IPool public pool;
@@ -22,7 +22,7 @@ contract LeveragedPositionManagerTest is Test {
     address public bob = makeAddr("Bob");
 
     function setUp() public {
-        script = new DeployMockScript();
+        script = new DeployMockProtocolScript();
         script.run();
 
         // Get the deployed contracts
@@ -42,7 +42,7 @@ contract LeveragedPositionManagerTest is Test {
         weth.mint(bob, 10 * 10 ** weth.decimals());
         usdc.mint(alice, 5600000000 * 10 ** usdc.decimals());
         usdc.mint(bob, 1000000 * 10 ** usdc.decimals());
-        
+
         // Alice fills in the pool
         vm.startPrank(alice);
         weth.approve(address(pool), type(uint256).max);
@@ -77,7 +77,7 @@ contract LeveragedPositionManagerTest is Test {
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aWeth, 12 * 10 ** weth.decimals(), 8000, address(0)
         );
-        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals());
+        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals(), "Amount in token to borrow is not correct");
 
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
             aUsdc, 34 * 10 ** usdc.decimals(), 8000, address(0)
@@ -110,36 +110,64 @@ contract LeveragedPositionManagerTest is Test {
     }
 
     function test_AmountInTokenToBorrowWithExceedingCollateralAlreadyExisting() public {
-        
+        vm.skip(true, "TODO");
+    }
+
+    function test_AmountInTokenToBorrowWithCollateralAlreadyInProtocol() public {
+        uint256 totalCollateralBase;
+        uint256 totalDebtBase;
+
+        uint256 targetLtv = 1000;
+        vm.startPrank(bob);
+        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), targetLtv, 2);
+        vm.stopPrank();
+
+        (totalCollateralBase, totalDebtBase,,,,) = pool.getUserAccountData(bob);
+        vm.assertApproxEqRel(totalDebtBase * 10000 / totalCollateralBase, targetLtv, 1e16, "A1");
+
+        vm.startPrank(bob);
         uint256 amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aWeth, 12 * 10 ** weth.decimals(), 8000, alice
+            aWeth, 1 * 10 ** weth.decimals(), targetLtv * 2, bob
         );
-        vm.assertEq(amountInTokenToBorrow, 0);
+        vm.assertEq(amountInTokenToBorrow, 1388888888888890000, "A2");
+        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), targetLtv * 2, 2);
+
+        (totalCollateralBase, totalDebtBase,,,,) = pool.getUserAccountData(bob);
+        vm.assertEq(
+            leveragedPositionManager.convertBaseToToken(aWeth, totalCollateralBase),
+            25 * 10 ** (weth.decimals() - 1),
+            "A3"
+        );
+        vm.assertEq(
+            leveragedPositionManager.convertBaseToToken(aWeth, totalDebtBase), 5 * 10 ** (weth.decimals() - 1), "A4"
+        );
+        vm.assertEq(totalDebtBase * 10000 / totalCollateralBase, targetLtv * 2, "A5");
+
+        vm.stopPrank();
     }
 
     function test_AmountInTokenToBorrowWithCollateralAlreadyExisting() public {
-
         uint256 collateralInWethProvided = 10 * 10 ** weth.decimals();
         vm.startPrank(bob);
         pool.supply(address(weth), collateralInWethProvided, bob, 0);
         vm.stopPrank();
 
         uint256 amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aWeth, 12 * 10 ** weth.decimals(), 8000, bob
+            aWeth, 10 * 10 ** weth.decimals(), 8000, bob
         );
-        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals() - collateralInWethProvided);
+
+        vm.assertEq(amountInTokenToBorrow, 5 * 20 * 10 ** weth.decimals() - collateralInWethProvided, "A1");
 
         uint256 collateralInUsdcProvided = collateralInWethProvided * 2000 / 10 ** (18 - usdc.decimals());
         vm.startPrank(bob);
         pool.supply(address(usdc), collateralInUsdcProvided, bob, 0);
         vm.stopPrank();
-        vm.assertEq(usdc.balanceOf(bob), 980000 * 10 ** usdc.decimals());
-        
+        vm.assertEq(usdc.balanceOf(bob), 980000 * 10 ** usdc.decimals(), "A2");
 
         amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aWeth, 12 * 10 ** weth.decimals(), 8000, bob
+            aWeth, 10 * 10 ** weth.decimals(), 8000, bob
         );
-        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals() - 2 * collateralInWethProvided);
+        vm.assertEq(amountInTokenToBorrow, 5 * 30 * 10 ** weth.decimals() - 2 * collateralInWethProvided);
     }
 
     function test_ValidateLtv_ValidTargetLtv() public {
@@ -151,7 +179,7 @@ contract LeveragedPositionManagerTest is Test {
     function test_ValidateLtv_ZeroTargetLtv() public {
         uint256 targetLtv = 0;
         uint256 validatedLtv = leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
-        assertEq(validatedLtv, 8000); 
+        assertEq(validatedLtv, 8000);
     }
 
     function test_ValidateLtv_ExceedsMaxLtv() public {
@@ -184,21 +212,25 @@ contract LeveragedPositionManagerTest is Test {
         leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), 1000, 2);
         leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), 2000, 2);
         vm.stopPrank();
-
-    }    
+    }
 
     function test_takePositionFromZeroCollateralWithPoolsWithNoPremium() public {
-        
         uint256 targetLtv = 8000;
 
         vm.startPrank(bob);
         leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), targetLtv, 2);
         vm.stopPrank();
 
-       (uint256 totalCollateralBase, uint256 totalDebtBase, , , , ) = pool.getUserAccountData(bob);
+        (uint256 totalCollateralBase, uint256 totalDebtBase,,,,) = pool.getUserAccountData(bob);
+        vm.assertEq(
+            leveragedPositionManager.convertBaseToToken(aWeth, totalCollateralBase), 5 * 10 ** weth.decimals(), "A1"
+        );
+        vm.assertEq(leveragedPositionManager.convertBaseToToken(aWeth, totalDebtBase), 4 * 10 ** weth.decimals(), "A2");
+        vm.assertEq(totalDebtBase * 10000 / totalCollateralBase, targetLtv, "A3");
+    }
 
-        assertEq(totalDebtBase * 10000 / totalCollateralBase, targetLtv);
-
+    function test_noNeedToGetCollateralFromFlashloan() public {
+        vm.skip(true, "TODO");
     }
 
     function test_takePositionFromZeroCollateralWithPoolsWithPremium() public {
@@ -229,12 +261,19 @@ contract LeveragedPositionManagerTest is Test {
         vm.skip(true, "TODO");
     }
 
+    function test_executeOperationValidations() public {
+        vm.skip(true, "TODO");
+    }
 
-
-
-    
-    
-    
-    
-    
+    function test_convertBaseToToken() public {
+        uint256 wethBaseAmount = 1000e18; // 1000 base units of weth
+        uint256 usdcBaseAmount = 1000e18; // 1000 base units of usdc
+        uint256 wethTokenAmount = leveragedPositionManager.convertBaseToToken(aWeth, wethBaseAmount);
+        assertEq(wethTokenAmount, 1 * 10 ** weth.decimals() / 2);
+        uint256 usdcTokenAmount = leveragedPositionManager.convertBaseToToken(aUsdc, usdcBaseAmount);
+        assertEq(usdcTokenAmount, 1000 * 10 ** usdc.decimals());
+        uint256 wethTokenAmountNormalized = wethTokenAmount * 10 ** (36 - weth.decimals());
+        uint256 usdcTokenAmountNormalized = usdcTokenAmount * 10 ** (36 - usdc.decimals());
+        assertEq(usdcTokenAmountNormalized / wethTokenAmountNormalized, 2000);
+    }
 }

@@ -2,15 +2,15 @@
 pragma solidity ^0.8.12;
 
 import "forge-std/Test.sol";
-import "../../script/DeployMockScript.sol";
+import "../../script/DeployMockProtocolScript.sol";
 import "../../dependencies/zerolend-1.0.0/contracts/mocks/tokens/MintableERC20.sol";
 import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPool.sol";
 import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IAToken.sol";
 import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPoolAddressesProvider.sol";
 import "../../dependencies/zerolend-1.0.0/contracts/interfaces/IPriceOracle.sol";
 
-contract DeployMockTest is Test {
-    DeployMockScript public script;
+contract DeployMockProtocolTest is Test {
+    DeployMockProtocolScript public script;
     MintableERC20 public weth;
     MintableERC20 public usdc;
     IPool public pool;
@@ -23,7 +23,7 @@ contract DeployMockTest is Test {
 
     function setUp() public {
         // Deploy the stack using the script
-        script = new DeployMockScript();
+        script = new DeployMockProtocolScript();
         script.run();
 
         // Get the deployed contracts

@@ -26,7 +26,7 @@ import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/types/Config
 import "../dependencies/zerolend-1.0.0/contracts/protocol/configuration/ACLManager.sol";
 import "../dependencies/zerolend-1.0.0/contracts/interfaces/IAaveIncentivesController.sol";
 
-contract DeployMockScript is Script {
+contract DeployMockProtocolScript is Script {
     function setUp() public {}
 
     AToken public aWeth;
@@ -63,9 +63,8 @@ contract DeployMockScript is Script {
 
         // 7. Deploy and set price oracle
         PriceOracle oracle = new PriceOracle();
-        oracle.setEthUsdPrice(2000e18); // 1 ETH = 2000 USDeq.
-        oracle.setAssetPrice(address(weth), 2000e18); // 1 WETH = 2000 USDeq.
-        oracle.setAssetPrice(address(usdc), 1e18); // 1 USDC = 1 USDeq.
+        oracle.setAssetPrice(address(weth), 2000e18);
+        oracle.setAssetPrice(address(usdc), 1e18);
         market.setPriceOracle(address(oracle));
 
         // 8. Deploy and set pool implementation and get pool proxy

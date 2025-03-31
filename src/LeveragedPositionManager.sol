@@ -72,6 +72,25 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         }
     }
 
+    function tokenPrice(AToken aToken) public view returns (uint256) {
+        IPriceOracle priceOracle = IPriceOracle(aToken.POOL().ADDRESSES_PROVIDER().getPriceOracle());
+
+        uint256 tokenPrice = priceOracle.getAssetPrice(aToken.UNDERLYING_ASSET_ADDRESS());
+        if (tokenPrice == 0) {
+            revert TokenPriceZeroOrUnknown(address(aToken));
+        }
+
+        return tokenPrice;
+    }
+
+    /// @param aToken: aToken to convert
+    /// @param baseAmount: amount of the base currency to convert
+    /// @return tokenAmount: amount of the token
+    function convertBaseToToken(AToken aToken, uint256 baseAmount) public view returns (uint256) {
+        uint256 tokenAmount = baseAmount * (10 ** aToken.decimals()) / tokenPrice(aToken);
+        return tokenAmount;
+    }
+
     /// @param aToken The AToken to validate
     /// @param targetLtv The desired LTV value
     /// @param user The address of the user whose LTV is being validated
@@ -109,19 +128,21 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     // @notice: this function is used to take a leveraged position by looping lending and borrowing using the same token
     // @notice: not all prerequisites are checked here (pool liquidity availability, token used as collateral, IRMode, etc.) as it will be called by the core contracts. Only basic prerequisites are checked here (token user's balance and ltv limit to have early revert)
     function takePosition(AToken aToken, uint256 lentTokenAmount, uint256 targetLtv, uint256 interestRateMode) public {
-
         // @dev: revert if the token is not supported
         revertIfATokenNotSupported(aToken);
 
         /// @dev: Pre-flashloan balances, captured to prevent the contract from being unusable if someone sends tokens to this contract
-        uint256 underlyingBalanceBeforeFlashLoan = IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)); 
+        uint256 underlyingBalanceBeforeFlashLoan = IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this));
         uint256 aTokenBalanceBeforeFlashLoan = aToken.balanceOf(address(this));
 
         // @dev: transfer the lent token from the user to this contract
         IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).transferFrom(msg.sender, address(this), lentTokenAmount);
 
         // @dev: set the transient storage
-        if (address(transientPool) == address(0) && address(transientAddressesProvider) == address(0) && address(transientUser) == address(0)) {
+        if (
+            address(transientPool) == address(0) && address(transientAddressesProvider) == address(0)
+                && address(transientUser) == address(0)
+        ) {
             transientPool = aToken.POOL();
             transientAddressesProvider = transientPool.ADDRESSES_PROVIDER();
             transientUser = msg.sender;
@@ -132,10 +153,10 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         // @dev: validate the target LTV and get the final target LTV
         targetLtv = validateLtv(aToken, targetLtv, msg.sender);
 
-        // @dev: get the amount of collateral to get from flashloan 
+        // @dev: get the amount of collateral to get from flashloan
         uint256 collateralToGetFromFlashloanInToken =
             getCollateralToGetFromFlashloanInToken(aToken, lentTokenAmount, targetLtv, msg.sender);
-        
+
         // @dev: execute the flashloan
         address[] memory assets = new address[](1);
         assets[0] = aToken.UNDERLYING_ASSET_ADDRESS();
@@ -149,7 +170,9 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
 
         /// @dev: revert if the allowance is not 0
         if (IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL())) != 0) {
-            revert NonZeroAllowance(IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL())));
+            revert NonZeroAllowance(
+                IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL()))
+            );
         }
 
         /// @dev: execute the flashloan
@@ -158,17 +181,13 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         /// @dev: post-flashloan check that the balances of underlying are the same
         if (IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)) != underlyingBalanceBeforeFlashLoan) {
             revert BalanceMismatch(
-                IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)),
-                underlyingBalanceBeforeFlashLoan
+                IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)), underlyingBalanceBeforeFlashLoan
             );
         }
 
         /// @dev: post-flashloan check that the balances of aToken are the same
         if (aToken.balanceOf(address(this)) != aTokenBalanceBeforeFlashLoan) {
-            revert BalanceMismatch(
-                aToken.balanceOf(address(this)),
-                aTokenBalanceBeforeFlashLoan
-            );
+            revert BalanceMismatch(aToken.balanceOf(address(this)), aTokenBalanceBeforeFlashLoan);
         }
 
         /// @dev: post-flashloan check that the allowance is 0
@@ -177,13 +196,9 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
                 IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL()))
             );
         }
-
-
         transientPool = IPool(address(0));
         transientAddressesProvider = IPoolAddressesProvider(address(0));
         transientUser = address(0);
-
-        
     }
 
     // @param aToken: aToken to to loop with
@@ -196,40 +211,21 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         uint256 targetLtv,
         address user
     ) public view returns (uint256) {
-        
-        // @dev: get the target collateral in tokens. This is the lentTokenAmount x the leverage factor
-        uint256 targetCollateralInToken = lentTokenAmount / (10000 - targetLtv) * 10000;
+        // @dev: get the current free liquidity in tokens
+        (uint256 exitingCollateralBase, uint256 exitingDebtBase,,,,) = aToken.POOL().getUserAccountData(user);
+        uint256 totalFreeLiquidityInToken =
+            convertBaseToToken(aToken, exitingCollateralBase - exitingDebtBase) + lentTokenAmount;
 
-        // @dev: get the current collateral in base
-        (uint256 totalCollateralBase,,,,,) = aToken.POOL().getUserAccountData(user);
+        // @dev: get the target collateral in tokens
+        uint256 targetCollateralInToken = totalFreeLiquidityInToken / (10000 - targetLtv) * 10000;
 
-        // @dev: get the price of the token in base currency
-        // @notice: Eth mantissa is 18. `getAssetPrice` mantissa is 18 as well
-        // @notice: eg:
-        // - 1 ETH (base currency) = 2000 USDeq.
-        // - 1 BTC = 80000 USDeq.
-        // => getAssetPrice(BTC) = 80000 / 2000 x 10^18 = 4000000000000000000000000
-        IPriceOracle priceOracle = IPriceOracle(aToken.POOL().ADDRESSES_PROVIDER().getPriceOracle());
+        // @dev: get the amount of collateral in tokens
+        uint256 existingCollateralInToken = convertBaseToToken(aToken, exitingCollateralBase);
 
-        uint256 tokenPrice = priceOracle.getAssetPrice(aToken.UNDERLYING_ASSET_ADDRESS());
-        if (tokenPrice == 0) {
-            revert TokenPriceZeroOrUnknown(address(aToken));
-        }
-
-        // @dev: get the current collateral in tokens
-        uint256 totalCollateralInToken = totalCollateralBase / tokenPrice * 10 ** 18;
-
-        uint256 collateralToGetFromFlashloanInToken;
-        if (totalCollateralInToken >= targetCollateralInToken) {
-            // @dev: if the total collateral in tokens is greater than the target collateral in tokens, we don't need to get any collateral from flashloan
-            collateralToGetFromFlashloanInToken = 0;
-        } else {
-            // @dev: get the amount of collateral to get from flashloan
-            // @notice: we need to subtract the lentTokenAmount from the total collateral in tokens because it will contribute to the collateral in the next flashloan
-            collateralToGetFromFlashloanInToken = targetCollateralInToken - totalCollateralInToken;
-        }
-        
-        return collateralToGetFromFlashloanInToken;
+        // @dev: return the amount of collateral to get from flashloan
+        return targetCollateralInToken - existingCollateralInToken > 0
+            ? targetCollateralInToken - existingCollateralInToken
+            : 0;
     }
 
     /// @inheritdoc IFlashLoanReceiver
@@ -240,7 +236,8 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         address initiator,
         bytes calldata params
     ) external returns (bool) {
-        (address user, IPool pool, uint256 targetLtv, uint256 interestRateMode) = abi.decode(params, (address, IPool, uint256, uint256));
+        (address user, IPool pool, uint256 targetLtv, uint256 interestRateMode) =
+            abi.decode(params, (address, IPool, uint256, uint256));
         if (msg.sender != address(transientPool)) {
             revert CallerNotPool(msg.sender, address(transientPool));
         }
