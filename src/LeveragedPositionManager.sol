@@ -72,6 +72,8 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         }
     }
 
+    /// @param aToken: aToken to get the price of
+    /// @return tokenPrice: price of the token
     function getTokenPrice(AToken aToken) public view returns (uint256) {
         IPriceOracle priceOracle = IPriceOracle(aToken.POOL().ADDRESSES_PROVIDER().getPriceOracle());
 
