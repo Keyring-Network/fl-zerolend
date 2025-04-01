@@ -4,11 +4,11 @@ A Solidity smart contract for managing leveraged positions in the Zerolend proto
 
 ### Todo
 
-- [ ] Add tests
+- [ ] Add more tests
 - [ ] Add fuzzing
 - [ ] Docs
 - [ ] PoC UI
-- [ ] Replace imports with remappings
+- [ ] Replace ugly imports with remappings
 
 ### Prerequisites
 
