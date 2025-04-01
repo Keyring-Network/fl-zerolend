@@ -41,7 +41,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     error InvalidFlashLoanAmount(uint256 amount, uint256 premium);
     error InvalidBorrowAmount(uint256 amountToBorrow, uint256 amountToRepay, uint256 currentBalance);
 
-    // @dev: fake transient storage to ensure EVM backward compatibility
+    // @dev: transient storage as persistent storage to ensure EVM backward compatibility
     IPool public transientPool;
     IPoolAddressesProvider public transientAddressesProvider;
     address public transientUser;
