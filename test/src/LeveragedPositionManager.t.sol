@@ -285,4 +285,40 @@ contract LeveragedPositionManagerTest is Test {
         uint256 usdcTokenAmountNormalized = usdcTokenAmount * 10 ** (36 - usdc.decimals());
         assertEq(usdcTokenAmountNormalized / wethTokenAmountNormalized, 2000);
     }
+
+    function test_transientStorageRemainsUnset(uint256 amount, uint256 targetLtv) public {
+        // Bound the amount to reasonable values to avoid overflow
+        amount = bound(amount, 0.1 ether, 100 ether);
+        // Bound the targetLtv to valid range (0-8000)
+        targetLtv = bound(targetLtv, 0, 8000);
+
+        // Ensure Bob has enough WETH balance
+        uint256 bobWethBalance = weth.balanceOf(bob);
+        if (bobWethBalance < amount) {
+            weth.mint(bob, amount - bobWethBalance);
+        }
+
+        // Verify transient storage is unset before transaction
+        assertEq(address(leveragedPositionManager.transientPool()), address(0), "Transient pool should be unset before");
+        assertEq(
+            address(leveragedPositionManager.transientAddressesProvider()),
+            address(0),
+            "Transient addresses provider should be unset before"
+        );
+        assertEq(leveragedPositionManager.transientUser(), address(0), "Transient user should be unset before");
+
+        // Execute a transaction
+        vm.startPrank(bob);
+        leveragedPositionManager.takePosition(aWeth, amount, targetLtv, 2);
+        vm.stopPrank();
+
+        // Verify transient storage is unset after transaction
+        assertEq(address(leveragedPositionManager.transientPool()), address(0), "Transient pool should be unset after");
+        assertEq(
+            address(leveragedPositionManager.transientAddressesProvider()),
+            address(0),
+            "Transient addresses provider should be unset after"
+        );
+        assertEq(leveragedPositionManager.transientUser(), address(0), "Transient user should be unset after");
+    }
 }
