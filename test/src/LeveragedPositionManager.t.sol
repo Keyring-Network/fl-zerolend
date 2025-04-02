@@ -193,7 +193,7 @@ contract LeveragedPositionManagerTest is Test {
 
     function test_ValidateLtv_ExceedsMaxLtv() public {
         uint256 targetLtv = 8500;
-        vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.LTVTooHigh.selector, targetLtv, 8000));
+        vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.LtvTooHigh.selector, targetLtv, 8000));
         leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
     }
 
@@ -206,7 +206,7 @@ contract LeveragedPositionManagerTest is Test {
         vm.stopPrank();
 
         uint256 targetLtv = 7000;
-        vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.LTVTooLow.selector, targetLtv, 7500));
+        vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.LtvTooLow.selector, targetLtv, 7500));
         leveragedPositionManager.validateLtv(aWeth, targetLtv, bob);
     }
 

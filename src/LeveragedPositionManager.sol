@@ -11,12 +11,12 @@ import "../dependencies/zerolend-1.0.0/contracts/interfaces/IScaledBalanceToken.
 import "../dependencies/zerolend-1.0.0/contracts/flashloan/interfaces/IFlashLoanReceiver.sol";
 import "../dependencies/zerolend-1.0.0/contracts/protocol/libraries/types/DataTypes.sol";
 import "../dependencies/zerolend-1.0.0/contracts/interfaces/IPriceOracle.sol";
-/// For a brand new position (0 collateral, 0 borrowed), given a LTV, a user with an amount X of tokens can take the following position:
-/// - Leverage factor = 1 / (1 - LTV)
+/// For a brand new position (0 collateral, 0 borrowed), given a Ltv, a user with an amount X of tokens can take the following position:
+/// - Leverage factor = 1 / (1 - Ltv)
 /// - Total lent = X * leverage factor
-/// - Total borrowed = X * leverage factor * LTV
+/// - Total borrowed = X * leverage factor * Ltv
 ///
-/// EG with LTV = 0.8 and X = 1000 USD:
+/// EG with Ltv = 0.8 and X = 1000 USD:
 /// - Leverage factor = 1 / (1 - 0.8) = 5
 /// - Total lent = 1000 * 5 = 5000 USD
 /// - Total borrowed = 5000 * 0.8 = 4000 USD
@@ -28,8 +28,8 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     error TokenNotSupported(address tokenAddress);
     error TokenPriceZeroOrUnknown(address tokenAddress);
     error InsufficientLentTokenBalance(address tokenAddress, uint256 balance);
-    error LTVTooHigh(uint256 requestedLTV, uint256 maxPoolLTV);
-    error LTVTooLow(uint256 targetLTV, uint256 currentLTV);
+    error LtvTooHigh(uint256 requestedLtv, uint256 maxPoolLtv);
+    error LtvTooLow(uint256 targetLtv, uint256 currentLtv);
     error TransientStorageMismatch();
     error CallerNotPool(address caller, address expectedPool);
     error UserMismatch(address provided, address expected);
@@ -94,29 +94,29 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     }
 
     /// @param aToken The AToken to validate
-    /// @param targetLtv The desired LTV value
-    /// @param user The address of the user whose LTV is being validated
-    /// @return The validated target LTV (might be adjusted to max LTV if not specified)
+    /// @param targetLtv The desired Ltv value
+    /// @param user The address of the user whose Ltv is being validated
+    /// @return The validated target Ltv (might be adjusted to max Ltv if not specified)
     function validateLtv(AToken aToken, uint256 targetLtv, address user) public view returns (uint256) {
         IPool pool = AToken(address(aToken)).POOL();
         address underlyingAsset = aToken.UNDERLYING_ASSET_ADDRESS();
         DataTypes.ReserveData memory reserveData = pool.getReserveData(underlyingAsset);
-        uint256 maxLTV = (reserveData.configuration.data & 0xFFFF);
+        uint256 maxLtv = (reserveData.configuration.data & 0xFFFF);
 
-        if (targetLtv > maxLTV) {
-            revert LTVTooHigh(targetLtv, maxLTV);
+        if (targetLtv > maxLtv) {
+            revert LtvTooHigh(targetLtv, maxLtv);
         }
 
-        // @dev: if the targetLtv is 0, set it to the maxLTV
-        targetLtv = targetLtv == 0 ? maxLTV : targetLtv;
+        // @dev: if the targetLtv is 0, set it to the maxLtv
+        targetLtv = targetLtv == 0 ? maxLtv : targetLtv;
 
-        // @dev: get the current LTV from user account data
+        // @dev: get the current Ltv from user account data
         (uint256 totalCollateralBase, uint256 totalDebtBase,,,,) = pool.getUserAccountData(user);
         uint256 currentLtv = totalDebtBase == 0 ? 0 : (totalDebtBase * 10000) / totalCollateralBase;
 
-        /// @dev: if the current LTV is greater than the target LTV, revert
+        /// @dev: if the current Ltv is greater than the target Ltv, revert
         if (currentLtv >= targetLtv) {
-            revert LTVTooLow(targetLtv, currentLtv);
+            revert LtvTooLow(targetLtv, currentLtv);
         }
 
         return targetLtv;
@@ -125,7 +125,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     // @param aToken: aToken of the lent token
     // @param aBorrowedToken: aToken of the borrowed token
     // @param interestRateMode: Mode of the interest rate: Mode stable (MODE 1) or Mode variable (MODE 2)
-    // @param targetLtv: Target LTV to reach with a mantissa of 10000. Leave empty to use the max LTV of the pool
+    // @param targetLtv: Target Ltv to reach with a mantissa of 10000. Leave empty to use the max Ltv of the pool
     // @notice: args expecting ATokens to be able to check their existence in the protocol
     // @notice: this function is used to take a leveraged position by looping lending and borrowing using the same token
     // @notice: not all prerequisites are checked here (pool liquidity availability, token used as collateral, IRMode, etc.) as it will be called by the core contracts. Only basic prerequisites are checked here (token user's balance and ltv limit to have early revert)
@@ -152,7 +152,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
             revert TransientStorageMismatch();
         }
 
-        // @dev: validate the target LTV and get the final target LTV
+        // @dev: validate the target Ltv and get the final target Ltv
         targetLtv = validateLtv(aToken, targetLtv, msg.sender);
 
         // @dev: get the amount of collateral to get from flashloan
@@ -204,7 +204,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
 
     // @param aToken: aToken to to loop with
     // @param lentTokenAmount: amount of the lent token
-    // @param targetLtv: target LTV to reach with a mantissa of 10000
+    // @param targetLtv: target Ltv to reach with a mantissa of 10000
     // @notice: returns the amount of tokens to get from flashloan in tokens
     function getCollateralToGetFromFlashloanInToken(
         AToken aToken,

@@ -99,7 +99,7 @@ contract DeployMockProtocolTest is Test {
         vm.assertEq(totalDebtBase, 0);
         vm.assertEq(availableBorrowsBase, 495173600000000000000000); // Available borrows based on collateral
         vm.assertEq(currentLiquidationThreshold, 8729); // 87.29% threshold
-        vm.assertEq(ltv, 8479); // 84.79% LTV
+        vm.assertEq(ltv, 8479); // 84.79% Ltv
         vm.assertEq(healthFactor, type(uint256).max); // No debt, so max health factor
 
         // Log Bob's final account data
@@ -110,7 +110,7 @@ contract DeployMockProtocolTest is Test {
         vm.assertEq(totalDebtBase, 43520000000000000000000); // Borrowed USDC amount in base units
         vm.assertEq(availableBorrowsBase, 10880000000000000000000); // Remaining available borrows
         vm.assertEq(currentLiquidationThreshold, 8250); // 82.50% threshold
-        vm.assertEq(ltv, 8000); // 80% LTV
+        vm.assertEq(ltv, 8000); // 80% Ltv
         vm.assertEq(healthFactor, 1289062500000000000); // Health factor based on collateral and debt
     }
 
