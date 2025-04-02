@@ -137,8 +137,10 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         uint256 underlyingBalanceBeforeFlashLoan = IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this));
         uint256 aTokenBalanceBeforeFlashLoan = aToken.balanceOf(address(this));
 
+        IERC20 token = IERC20(aToken.UNDERLYING_ASSET_ADDRESS());
+
         // @dev: transfer the lent token from the user to this contract
-        IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).transferFrom(msg.sender, address(this), lentTokenAmount);
+        token.safeTransferFrom(msg.sender, address(this), lentTokenAmount);
 
         // @dev: set the transient storage
         if (
@@ -170,20 +172,16 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         uint16 referralCode = 0;
 
         /// @dev: revert if the allowance is not 0
-        if (IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL())) != 0) {
-            revert NonZeroAllowance(
-                IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL()))
-            );
+        if (token.allowance(address(this), address(aToken.POOL())) != 0) {
+            revert NonZeroAllowance(token.allowance(address(this), address(aToken.POOL())));
         }
 
         /// @dev: execute the flashloan
         aToken.POOL().flashLoan(address(this), assets, amounts, interestRateModes, address(this), params, referralCode);
 
         /// @dev: post-flashloan check that the balances of underlying are the same
-        if (IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)) != underlyingBalanceBeforeFlashLoan) {
-            revert BalanceMismatch(
-                IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).balanceOf(address(this)), underlyingBalanceBeforeFlashLoan
-            );
+        if (token.balanceOf(address(this)) != underlyingBalanceBeforeFlashLoan) {
+            revert BalanceMismatch(token.balanceOf(address(this)), underlyingBalanceBeforeFlashLoan);
         }
 
         /// @dev: post-flashloan check that the balances of aToken are the same
@@ -192,10 +190,8 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         }
 
         /// @dev: post-flashloan check that the allowance is 0
-        if (IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL())) != 0) {
-            revert NonZeroAllowance(
-                IERC20(aToken.UNDERLYING_ASSET_ADDRESS()).allowance(address(this), address(aToken.POOL()))
-            );
+        if (token.allowance(address(this), address(aToken.POOL())) != 0) {
+            revert NonZeroAllowance(token.allowance(address(this), address(aToken.POOL())));
         }
         transientPool = IPool(address(0));
         transientAddressesProvider = IPoolAddressesProvider(address(0));
@@ -256,7 +252,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
 
         IERC20 token = IERC20(assets[0]);
         uint256 amount = amounts[0];
-        uint256 premium = premiums[0]; // TODO: understand why premium is 0
+        uint256 premium = premiums[0];
 
         // @dev: approve the token for the pool
         token.approve(address(pool), amount);
@@ -273,10 +269,10 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         // @dev: borrow the token
         pool.borrow(address(token), amountToBorrow, interestRateMode, 0, user);
 
-        // @dev: repay the flashloan
-
         // @dev: set the exact allowance for the pool
         token.approve(address(pool), amountToRepay);
+
+        // @dev: repayment is held by the pool, by transferingFrom the tokens to the pool
 
         return true;
     }

@@ -77,7 +77,7 @@ contract DeployMockProtocolScript is Script {
         StableDebtToken usdcStableDebtToken = new StableDebtToken(pool);
         VariableDebtToken usdcVariableDebtToken = new VariableDebtToken(pool);
 
-        // Initialize aTokens
+        // 10. Initialize aTokens
         aWeth.initialize(
             pool,
             address(this), // treasury
@@ -100,7 +100,7 @@ contract DeployMockProtocolScript is Script {
             bytes("")
         );
 
-        // 10. Deploy interest rate strategies
+        // 11. Deploy interest rate strategies
         IDefaultInterestRateStrategy wethStrategy = new DefaultReserveInterestRateStrategy(
             IPoolAddressesProvider(address(market)),
             0.8e27, // optimal utilization
@@ -126,7 +126,7 @@ contract DeployMockProtocolScript is Script {
             0.6e27 // optimal stable to total debt ratio
         );
 
-        // 11. Initialize reserves
+        // 12. Initialize reserves
         ConfiguratorInputTypes.InitReserveInput[] memory initInputs = new ConfiguratorInputTypes.InitReserveInput[](2);
 
         initInputs[0] = ConfiguratorInputTypes.InitReserveInput({
@@ -171,27 +171,27 @@ contract DeployMockProtocolScript is Script {
 
         configuratorProxy.initReserves(initInputs);
 
-        // 12. Configure reserves
+        // 13. Configure reserves
         configuratorProxy.configureReserveAsCollateral(
             address(weth),
-            8000, // 80% LTV
+            8000, // 80% Ltv
             8250, // 82.5% liquidation threshold
             10500 // 105% liquidation bonus
         );
         configuratorProxy.configureReserveAsCollateral(
             address(usdc),
-            8500, // 85% LTV
+            8500, // 85% Ltv
             8750, // 87.5% liquidation threshold
             10500 // 105% liquidation bonus
         );
 
-        // 13. Enable borrowing and set reserve factor
+        // 14. Enable borrowing and set reserve factor
         configuratorProxy.setReserveBorrowing(address(weth), true);
         configuratorProxy.setReserveFactor(address(weth), 1000); // 10%
         configuratorProxy.setReserveBorrowing(address(usdc), true);
         configuratorProxy.setReserveFactor(address(usdc), 1000); // 10%
 
-        // 14. Enable flash loans
+        // 15. Enable flash loans
         configuratorProxy.setReserveFlashLoaning(address(weth), true);
         configuratorProxy.setReserveFlashLoaning(address(usdc), true);
     }
