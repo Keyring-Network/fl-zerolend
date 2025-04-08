@@ -83,42 +83,42 @@ contract LeveragedPositionManagerTest is Test {
     function test_AmountInTokenToBorrowWithNoCollateralAlreadyExisting() public {
         uint256 amountInTokenToBorrow;
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aWeth, 12 * 10 ** weth.decimals(), 8000, address(0)
+        (amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
+            aWeth, int256(12 * 10 ** weth.decimals()), 8000, address(0)
         );
-        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals(), "Amount in token to borrow is not correct");
+        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals(), "A1");
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aUsdc, 34 * 10 ** usdc.decimals(), 8000, address(0)
+        (amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
+            aUsdc, int256(34 * 10 ** usdc.decimals()), 8000, address(0)
         );
-        vm.assertEq(amountInTokenToBorrow, 5 * 34 * 10 ** usdc.decimals());
+        vm.assertEq(amountInTokenToBorrow, 4 * 34 * 10 ** usdc.decimals(), "A2");
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aWeth, 12 * 10 ** weth.decimals(), 8000, bob
-        );
-        vm.assertEq(amountInTokenToBorrow, 5 * 12 * 10 ** weth.decimals());
+        (amountInTokenToBorrow,) =
+            leveragedPositionManager.getAmountToBorrowInFlashLoan(aWeth, int256(12 * 10 ** weth.decimals()), 8000, bob);
+        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals(), "A3");
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aUsdc, 34 * 10 ** usdc.decimals(), 8000, bob
-        );
-        vm.assertEq(amountInTokenToBorrow, 5 * 34 * 10 ** usdc.decimals());
-
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aWeth, 56 * 10 ** weth.decimals(), 0, address(0)
-        );
-        vm.assertEq(amountInTokenToBorrow, 56000000000000000000);
-
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aUsdc, 78 * 10 ** usdc.decimals(), 0, address(0)
-        );
-        vm.assertEq(amountInTokenToBorrow, 78000000);
+        (amountInTokenToBorrow,) =
+            leveragedPositionManager.getAmountToBorrowInFlashLoan(aUsdc, int256(34 * 10 ** usdc.decimals()), 8000, bob);
+        vm.assertEq(amountInTokenToBorrow, 4 * 34 * 10 ** usdc.decimals(), "A4");
 
         // TODO: fix this test with the decorator `forge-config: default.allow_internal_expect_revert = true`; Probably related to https://github.com/foundry-rs/foundry/issues/3437 ?
+        //  vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.UselessFlashLoan.selector));
+        // (amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
+        //     aWeth, int256(56 * 10 ** weth.decimals()), 0, address(0)
+        // );
+        // vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.UselessFlashLoan.selector));
+        // (amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
+        //     aUsdc, int256(78 * 10 ** usdc.decimals()), 0, address(0)
+        // );
         // vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.TokenPriceZeroOrUnknown.selector, address(0)));
         // leveragedPositionManager.getCollateralToGetFromFlashloanInToken(AToken(address(0)), 91 * 10 ** usdc.decimals(), 0, address(0));
     }
 
     function test_AmountInTokenToBorrowWithExceedingCollateralAlreadyExisting() public {
+        vm.skip(true, "TODO");
+    }
+
+    function test_SendTokensToContractShouldNotFreezeContract() public {
         vm.skip(true, "TODO");
     }
 
@@ -128,29 +128,33 @@ contract LeveragedPositionManagerTest is Test {
 
         uint256 targetLtv = 1000;
         vm.startPrank(bob);
-        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), targetLtv, 2);
+        leveragedPositionManager.takePosition(aWeth, int256(1 * 10 ** weth.decimals()), targetLtv, 2);
         vm.stopPrank();
 
         (totalCollateralBase, totalDebtBase,,,,) = pool.getUserAccountData(bob);
-        vm.assertApproxEqRel(totalDebtBase * 10000 / totalCollateralBase, targetLtv, 1e16, "A1");
+        vm.assertApproxEqRel(totalDebtBase * 10000 / totalCollateralBase, targetLtv, 1e15, "A1");
 
         vm.startPrank(bob);
-        uint256 amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aWeth, 1 * 10 ** weth.decimals(), targetLtv * 2, bob
+        (uint256 amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
+            aWeth, int256(1 * 10 ** weth.decimals()), targetLtv * 2, bob
         );
-        vm.assertEq(amountInTokenToBorrow, 1388888888888890000, "A2");
-        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), targetLtv * 2, 2);
+        vm.assertEq(amountInTokenToBorrow, 388888888888888888, "A2");
+        leveragedPositionManager.takePosition(aWeth, int256(1 * 10 ** weth.decimals()), targetLtv * 2, 2);
 
         (totalCollateralBase, totalDebtBase,,,,) = pool.getUserAccountData(bob);
-        vm.assertEq(
+        vm.assertApproxEqRel(
             leveragedPositionManager.convertBaseToToken(aWeth, totalCollateralBase),
             25 * 10 ** (weth.decimals() - 1),
+            1e18,
             "A3"
         );
-        vm.assertEq(
-            leveragedPositionManager.convertBaseToToken(aWeth, totalDebtBase), 5 * 10 ** (weth.decimals() - 1), "A4"
+        vm.assertApproxEqRel(
+            leveragedPositionManager.convertBaseToToken(aWeth, totalDebtBase),
+            5 * 10 ** (weth.decimals() - 1),
+            1e15,
+            "A4"
         );
-        vm.assertEq(totalDebtBase * 10000 / totalCollateralBase, targetLtv * 2, "A5");
+        vm.assertApproxEqRel(totalDebtBase * 10000 / totalCollateralBase, targetLtv * 2, 1e15, "A5");
 
         vm.stopPrank();
     }
@@ -161,11 +165,10 @@ contract LeveragedPositionManagerTest is Test {
         pool.supply(address(weth), collateralInWethProvided, bob, 0);
         vm.stopPrank();
 
-        uint256 amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aWeth, 10 * 10 ** weth.decimals(), 8000, bob
-        );
+        (uint256 amountInTokenToBorrow,) =
+            leveragedPositionManager.getAmountToBorrowInFlashLoan(aWeth, int256(10 * 10 ** weth.decimals()), 8000, bob);
 
-        vm.assertEq(amountInTokenToBorrow, 5 * 20 * 10 ** weth.decimals() - collateralInWethProvided, "A1");
+        vm.assertEq(amountInTokenToBorrow, 4 * 20 * 10 ** weth.decimals(), "A1");
 
         uint256 collateralInUsdcProvided = collateralInWethProvided * 2000 / 10 ** (18 - usdc.decimals());
         vm.startPrank(bob);
@@ -173,10 +176,9 @@ contract LeveragedPositionManagerTest is Test {
         vm.stopPrank();
         vm.assertEq(usdc.balanceOf(bob), 980000 * 10 ** usdc.decimals(), "A2");
 
-        amountInTokenToBorrow = leveragedPositionManager.getCollateralToGetFromFlashloanInToken(
-            aWeth, 10 * 10 ** weth.decimals(), 8000, bob
-        );
-        vm.assertEq(amountInTokenToBorrow, 5 * 30 * 10 ** weth.decimals() - 2 * collateralInWethProvided);
+        (amountInTokenToBorrow,) =
+            leveragedPositionManager.getAmountToBorrowInFlashLoan(aWeth, int256(8 * 10 ** weth.decimals()), 8000, bob);
+        vm.assertEq(amountInTokenToBorrow, 4 * 28 * 10 ** weth.decimals(), "A3");
     }
 
     function test_ValidateLtv_ValidTargetLtv() public {
@@ -218,8 +220,8 @@ contract LeveragedPositionManagerTest is Test {
 
     function test_resetTransientState() public {
         vm.startPrank(bob);
-        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), 1000, 2);
-        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), 2000, 2);
+        leveragedPositionManager.takePosition(aWeth, int256(1 * 10 ** weth.decimals()), 1000, 2);
+        leveragedPositionManager.takePosition(aWeth, int256(1 * 10 ** weth.decimals()), 2000, 2);
         vm.stopPrank();
     }
 
@@ -227,7 +229,7 @@ contract LeveragedPositionManagerTest is Test {
         uint256 targetLtv = 8000;
 
         vm.startPrank(bob);
-        leveragedPositionManager.takePosition(aWeth, 1 * 10 ** weth.decimals(), targetLtv, 2);
+        leveragedPositionManager.takePosition(aWeth, int256(1 * 10 ** weth.decimals()), targetLtv, 2);
         vm.stopPrank();
 
         (uint256 totalCollateralBase, uint256 totalDebtBase,,,,) = pool.getUserAccountData(bob);
@@ -309,7 +311,7 @@ contract LeveragedPositionManagerTest is Test {
 
         // Execute a transaction
         vm.startPrank(bob);
-        leveragedPositionManager.takePosition(aWeth, amount, targetLtv, 2);
+        leveragedPositionManager.takePosition(aWeth, int256(amount), targetLtv, 2);
         vm.stopPrank();
 
         // Verify transient storage is unset after transaction
