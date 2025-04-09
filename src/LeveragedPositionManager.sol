@@ -267,9 +267,6 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         pool.supply(address(token), amountBorrowed + tokenAmount, user, uint16(interestRateMode));
 
         // @dev: borrow the token
-        console.log("amountBorrowed", amountBorrowed);
-        console.log("premium", premium);
-        console.log("tokenAmount", tokenAmount);
         pool.borrow(address(token), amountBorrowed + premium, interestRateMode, 0, user);
 
         // @dev: set the exact allowance for the pool

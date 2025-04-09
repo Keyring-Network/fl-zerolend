@@ -323,4 +323,28 @@ contract LeveragedPositionManagerTest is Test {
         );
         assertEq(leveragedPositionManager.transientUser(), address(0), "Transient user should be unset after");
     }
+
+    // create a test to test the function getAmountToBorrowInFlashLoan when a user already a position and wants to deleverage it
+        function test_getAmountToBorrowInFlashLoan_WithExistingPosition() public {
+        // Setup initial leveraged position
+        uint256 initialAmount = 10 * 10 ** weth.decimals();
+        uint256 initialTargetLtv = 8000;
+        
+        vm.startPrank(bob);
+        leveragedPositionManager.takePosition(aWeth, int256(initialAmount), initialTargetLtv, 2);
+        vm.stopPrank();
+        
+        // Calculate amount needed to deleverage to 40% LTV
+        uint256 newTargetLtv = 8001; // 40%
+        
+        (uint256 amountToBorrow, bool isFlashLoan) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
+            aWeth,
+            0, 
+            newTargetLtv,
+            bob
+        );
+
+        console.log("amountToBorrow", amountToBorrow);
+        console.log("isFlashLoan", isFlashLoan);
+    }
 }
