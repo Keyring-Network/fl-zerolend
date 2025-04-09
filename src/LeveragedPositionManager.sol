@@ -42,9 +42,9 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     error InvalidFlashLoanAmount(uint256 amount, uint256 premium);
     error InvalidBorrowAmount(uint256 amountToBorrow, uint256 amountToRepay, uint256 currentBalance);
     error InvalidResultingCollateral();
-    error UselessFlashLoan();
+    
+    
     // @dev: transient storage as persistent storage to ensure EVM backward compatibility
-
     IPool public transientPool;
     IPoolAddressesProvider public transientAddressesProvider;
     address public transientUser;
@@ -127,29 +127,46 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         return targetLtv;
     }
 
+    /**
+     * @notice Computes the flash loan amount needed to adjust a position to a target LTV.
+     * @param targetLtv The desired resulting LTV after the operation (scaled by 10000, must be < 10000).
+     * @param tokenAmount The signed amount of tokens being added (positive) or withdrawn (negative).
+     * @return flashLoanAmount The flash loan amount:
+     *         - Positive value means you need to borrow that extra amount to "top up" your debt.
+     *         - Negative value means you need to repay that amount from your debt.
+     *         - Zero indicates no extra debt adjustment is required.
+     *
+     * The invariant assumed is that after the flash loan:
+     *      existingDebt + flashLoanAmount = targetLtv * (existingCollateral + tokenAmount + flashLoanAmount) / LTV_BASE
+     *
+     * Solving for flashLoanAmount (X):
+     *      X = [targetLtv * (existingCollateral + tokenAmount) / LTV_BASE - existingDebt] / (1 - targetLtv/LTV_BASE)
+     */
     function getAmountToBorrowInFlashLoan(AToken aToken, int256 tokenAmount, uint256 targetLtv, address user)
         public
         view
-        returns (uint256, bool)
+        returns (int256)
     {
         (uint256 existingCollateralBase, uint256 existingDebtBase,,,,) = aToken.POOL().getUserAccountData(user);
         uint256 existingCollateralInToken = convertBaseToToken(aToken, existingCollateralBase);
         uint256 existingDebtInToken = convertBaseToToken(aToken, existingDebtBase);
+        
+        // Calculate the new collateral after applying the user's token adjustment.
         int256 newCollateralInToken = int256(existingCollateralInToken) + tokenAmount;
-
         if (newCollateralInToken <= 0) {
             revert InvalidResultingCollateral();
         }
 
-        int256 amountToBorrow = int256(LTV_BASE)
-            * (int256(targetLtv) * newCollateralInToken / int256(LTV_BASE) - int256(existingDebtInToken))
-            / int256(LTV_BASE - targetLtv);
+        // Calculate the numerator:
+        // targetLtv * newCollateral is computed in fixed point, so we divide by LTV_BASE to restore scale.
+        int256 numerator = (int256(targetLtv) * newCollateralInToken) / int256(LTV_BASE) - int256(existingDebtInToken);
+        // Denominator is (LTV_BASE - targetLtv), using the same LTV_BASE scaling.
+        int256 denominator = int256(LTV_BASE) - int256(targetLtv);
 
-        if (amountToBorrow == 0) {
-            revert UselessFlashLoan();
-        }
-
-        return (uint256(amountToBorrow), amountToBorrow > 0);
+        // The flash loan amount (X) is given by:
+        // X = numerator / denominator.
+        return (numerator * int256(LTV_BASE)) / denominator;
+        
     }
 
     // @param aToken: aToken of the lent token
@@ -188,17 +205,16 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         targetLtv = validateLtv(aToken, targetLtv, msg.sender);
 
         // @dev: get the amount to get from flashloan
-        (uint256 amountToBorrowInFlashLoan, bool isBorrow) =
-            getAmountToBorrowInFlashLoan(aToken, tokenAmount, targetLtv, msg.sender);
+        int256 amountToBorrowInFlashLoan = getAmountToBorrowInFlashLoan(aToken, tokenAmount, targetLtv, msg.sender);
 
         // @dev: execute the flashloan
         address[] memory assets = new address[](1);
         assets[0] = aToken.UNDERLYING_ASSET_ADDRESS();
         uint256[] memory amounts = new uint256[](1);
-        amounts[0] = amountToBorrowInFlashLoan;
+        amounts[0] = amountToBorrowInFlashLoan > 0 ? uint256(amountToBorrowInFlashLoan) : uint256(-amountToBorrowInFlashLoan);
         uint256[] memory interestRateModes = new uint256[](1);
         interestRateModes[0] = 0;
-        bytes memory params = abi.encode(msg.sender, aToken.POOL(), interestRateMode, isBorrow, tokenAmount);
+        bytes memory params = abi.encode(msg.sender, aToken.POOL(), interestRateMode, amountToBorrowInFlashLoan > 0, tokenAmount);
         uint16 referralCode = 0;
 
         /// @dev: revert if the allowance is not 0
@@ -292,4 +308,26 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         }
         return transientPool;
     }
+
+
+    function getNetBalance(AToken aToken, address user) public view returns (uint256) {
+          DataTypes.ReserveData memory reserve = IPool(ADDRESSES_PROVIDER.getPool()).getReserveData(
+      asset
+    );
+
+    DataTypes.UserConfigurationMap memory userConfig = IPool(ADDRESSES_PROVIDER.getPool())
+      .getUserConfiguration(user);
+
+    currentATokenBalance = IERC20Detailed(reserve.aTokenAddress).balanceOf(user);
+    currentVariableDebt = IERC20Detailed(reserve.variableDebtTokenAddress).balanceOf(user);
+    currentStableDebt = IERC20Detailed(reserve.stableDebtTokenAddress).balanceOf(user);
+    principalStableDebt = IStableDebtToken(reserve.stableDebtTokenAddress).principalBalanceOf(user);
+    scaledVariableDebt = IVariableDebtToken(reserve.variableDebtTokenAddress).scaledBalanceOf(user);
+    liquidityRate = reserve.currentLiquidityRate;
+    stableBorrowRate = IStableDebtToken(reserve.stableDebtTokenAddress).getUserStableRate(user);
+    stableRateLastUpdated = IStableDebtToken(reserve.stableDebtTokenAddress).getUserLastUpdated(
+      user
+    );
+    }
+    
 }

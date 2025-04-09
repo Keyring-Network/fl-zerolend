@@ -81,25 +81,26 @@ contract LeveragedPositionManagerTest is Test {
     }
 
     function test_AmountInTokenToBorrowWithNoCollateralAlreadyExisting() public {
-        uint256 amountInTokenToBorrow;
+        int256 amountInTokenToBorrow;
 
-        (amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
+        amountInTokenToBorrow = leveragedPositionManager.getAmountToBorrowInFlashLoan(
             aWeth, int256(12 * 10 ** weth.decimals()), 8000, address(0)
         );
-        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals(), "A1");
+        vm.assertEq(amountInTokenToBorrow, int256(4 * 12 * 10 ** weth.decimals()), "A1");
 
-        (amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
-            aUsdc, int256(34 * 10 ** usdc.decimals()), 8000, address(0)
-        );
-        vm.assertEq(amountInTokenToBorrow, 4 * 34 * 10 ** usdc.decimals(), "A2");
+        amountInTokenToBorrow =
+            leveragedPositionManager.getAmountToBorrowInFlashLoan(
+                aUsdc, int256(34 * 10 ** usdc.decimals()), 8000, address(0)
+            );
+        vm.assertEq(amountInTokenToBorrow, int256(4 * 34 * 10 ** usdc.decimals()), "A2");
 
-        (amountInTokenToBorrow,) =
+        amountInTokenToBorrow =
             leveragedPositionManager.getAmountToBorrowInFlashLoan(aWeth, int256(12 * 10 ** weth.decimals()), 8000, bob);
-        vm.assertEq(amountInTokenToBorrow, 4 * 12 * 10 ** weth.decimals(), "A3");
+        vm.assertEq(amountInTokenToBorrow, int256(4 * 12 * 10 ** weth.decimals()), "A3");
 
-        (amountInTokenToBorrow,) =
+        amountInTokenToBorrow =
             leveragedPositionManager.getAmountToBorrowInFlashLoan(aUsdc, int256(34 * 10 ** usdc.decimals()), 8000, bob);
-        vm.assertEq(amountInTokenToBorrow, 4 * 34 * 10 ** usdc.decimals(), "A4");
+        vm.assertEq(amountInTokenToBorrow, int256(4 * 34 * 10 ** usdc.decimals()), "A4");
 
         // TODO: fix this test with the decorator `forge-config: default.allow_internal_expect_revert = true`; Probably related to https://github.com/foundry-rs/foundry/issues/3437 ?
         //  vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.UselessFlashLoan.selector));
@@ -135,10 +136,10 @@ contract LeveragedPositionManagerTest is Test {
         vm.assertApproxEqRel(totalDebtBase * 10000 / totalCollateralBase, targetLtv, 1e15, "A1");
 
         vm.startPrank(bob);
-        (uint256 amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
+        int256 amountInTokenToBorrow = leveragedPositionManager.getAmountToBorrowInFlashLoan(
             aWeth, int256(1 * 10 ** weth.decimals()), targetLtv * 2, bob
         );
-        vm.assertEq(amountInTokenToBorrow, 388888888888888888, "A2");
+        vm.assertEq(amountInTokenToBorrow, int256(388888888888888888), "A2");
         leveragedPositionManager.takePosition(aWeth, int256(1 * 10 ** weth.decimals()), targetLtv * 2, 2);
 
         (totalCollateralBase, totalDebtBase,,,,) = pool.getUserAccountData(bob);
@@ -165,10 +166,10 @@ contract LeveragedPositionManagerTest is Test {
         pool.supply(address(weth), collateralInWethProvided, bob, 0);
         vm.stopPrank();
 
-        (uint256 amountInTokenToBorrow,) =
+        int256 amountInTokenToBorrow =
             leveragedPositionManager.getAmountToBorrowInFlashLoan(aWeth, int256(10 * 10 ** weth.decimals()), 8000, bob);
 
-        vm.assertEq(amountInTokenToBorrow, 4 * 20 * 10 ** weth.decimals(), "A1");
+        vm.assertEq(amountInTokenToBorrow, int256(4 * 20 * 10 ** weth.decimals()), "A1");
 
         uint256 collateralInUsdcProvided = collateralInWethProvided * 2000 / 10 ** (18 - usdc.decimals());
         vm.startPrank(bob);
@@ -176,9 +177,9 @@ contract LeveragedPositionManagerTest is Test {
         vm.stopPrank();
         vm.assertEq(usdc.balanceOf(bob), 980000 * 10 ** usdc.decimals(), "A2");
 
-        (amountInTokenToBorrow,) =
+        amountInTokenToBorrow =
             leveragedPositionManager.getAmountToBorrowInFlashLoan(aWeth, int256(8 * 10 ** weth.decimals()), 8000, bob);
-        vm.assertEq(amountInTokenToBorrow, 4 * 28 * 10 ** weth.decimals(), "A3");
+        vm.assertEq(amountInTokenToBorrow, int256(4 * 28 * 10 ** weth.decimals()), "A3");
     }
 
     function test_ValidateLtv_ValidTargetLtv() public {
@@ -325,7 +326,7 @@ contract LeveragedPositionManagerTest is Test {
     }
 
     // create a test to test the function getAmountToBorrowInFlashLoan when a user already a position and wants to deleverage it
-        function test_getAmountToBorrowInFlashLoan_WithExistingPosition() public {
+    function test_getAmountToBorrowInFlashLoan_WithExistingPosition() public {
         // Setup initial leveraged position
         uint256 initialAmount = 10 * 10 ** weth.decimals();
         uint256 initialTargetLtv = 8000;
@@ -334,10 +335,9 @@ contract LeveragedPositionManagerTest is Test {
         leveragedPositionManager.takePosition(aWeth, int256(initialAmount), initialTargetLtv, 2);
         vm.stopPrank();
         
-        // Calculate amount needed to deleverage to 40% LTV
-        uint256 newTargetLtv = 8001; // 40%
+        uint256 newTargetLtv = 8000;
         
-        (uint256 amountToBorrow, bool isFlashLoan) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
+        int256 amountToBorrow = leveragedPositionManager.getAmountToBorrowInFlashLoan(
             aWeth,
             0, 
             newTargetLtv,
@@ -345,6 +345,6 @@ contract LeveragedPositionManagerTest is Test {
         );
 
         console.log("amountToBorrow", amountToBorrow);
-        console.log("isFlashLoan", isFlashLoan);
     }
+    
 }
