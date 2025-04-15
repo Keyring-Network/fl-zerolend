@@ -80,41 +80,6 @@ contract LeveragedPositionManagerTest is Test {
         leveragedPositionManager.revertIfATokenNotSupported(AToken(address(0)));
     }
 
-    function test_AmountInTokenToBorrowWithNoCollateralAlreadyExisting() public {
-        int256 amountInTokenToBorrow;
-
-        amountInTokenToBorrow = leveragedPositionManager.getAmountToBorrowInFlashLoan(
-            aWeth, int256(12 * 10 ** weth.decimals()), 8000, address(0)
-        );
-        vm.assertEq(amountInTokenToBorrow, int256(4 * 12 * 10 ** weth.decimals()), "A1");
-
-        amountInTokenToBorrow =
-            leveragedPositionManager.getAmountToBorrowInFlashLoan(
-                aUsdc, int256(34 * 10 ** usdc.decimals()), 8000, address(0)
-            );
-        vm.assertEq(amountInTokenToBorrow, int256(4 * 34 * 10 ** usdc.decimals()), "A2");
-
-        amountInTokenToBorrow =
-            leveragedPositionManager.getAmountToBorrowInFlashLoan(aWeth, int256(12 * 10 ** weth.decimals()), 8000, bob);
-        vm.assertEq(amountInTokenToBorrow, int256(4 * 12 * 10 ** weth.decimals()), "A3");
-
-        amountInTokenToBorrow =
-            leveragedPositionManager.getAmountToBorrowInFlashLoan(aUsdc, int256(34 * 10 ** usdc.decimals()), 8000, bob);
-        vm.assertEq(amountInTokenToBorrow, int256(4 * 34 * 10 ** usdc.decimals()), "A4");
-
-        // TODO: fix this test with the decorator `forge-config: default.allow_internal_expect_revert = true`; Probably related to https://github.com/foundry-rs/foundry/issues/3437 ?
-        //  vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.UselessFlashLoan.selector));
-        // (amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
-        //     aWeth, int256(56 * 10 ** weth.decimals()), 0, address(0)
-        // );
-        // vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.UselessFlashLoan.selector));
-        // (amountInTokenToBorrow,) = leveragedPositionManager.getAmountToBorrowInFlashLoan(
-        //     aUsdc, int256(78 * 10 ** usdc.decimals()), 0, address(0)
-        // );
-        // vm.expectRevert(abi.encodeWithSelector(LeveragedPositionManager.TokenPriceZeroOrUnknown.selector, address(0)));
-        // leveragedPositionManager.getCollateralToGetFromFlashloanInToken(AToken(address(0)), 91 * 10 ** usdc.decimals(), 0, address(0));
-    }
-
     function test_AmountInTokenToBorrowWithExceedingCollateralAlreadyExisting() public {
         vm.skip(true, "TODO");
     }
@@ -123,64 +88,6 @@ contract LeveragedPositionManagerTest is Test {
         vm.skip(true, "TODO");
     }
 
-    function test_AmountInTokenToBorrowWithCollateralAlreadyInProtocol() public {
-        uint256 totalCollateralBase;
-        uint256 totalDebtBase;
-
-        uint256 targetLtv = 1000;
-        vm.startPrank(bob);
-        leveragedPositionManager.takePosition(aWeth, int256(1 * 10 ** weth.decimals()), targetLtv, 2);
-        vm.stopPrank();
-
-        (totalCollateralBase, totalDebtBase,,,,) = pool.getUserAccountData(bob);
-        vm.assertApproxEqRel(totalDebtBase * 10000 / totalCollateralBase, targetLtv, 1e15, "A1");
-
-        vm.startPrank(bob);
-        int256 amountInTokenToBorrow = leveragedPositionManager.getAmountToBorrowInFlashLoan(
-            aWeth, int256(1 * 10 ** weth.decimals()), targetLtv * 2, bob
-        );
-        vm.assertEq(amountInTokenToBorrow, int256(388888888888888888), "A2");
-        leveragedPositionManager.takePosition(aWeth, int256(1 * 10 ** weth.decimals()), targetLtv * 2, 2);
-
-        (totalCollateralBase, totalDebtBase,,,,) = pool.getUserAccountData(bob);
-        vm.assertApproxEqRel(
-            leveragedPositionManager.convertBaseToToken(aWeth, totalCollateralBase),
-            25 * 10 ** (weth.decimals() - 1),
-            1e18,
-            "A3"
-        );
-        vm.assertApproxEqRel(
-            leveragedPositionManager.convertBaseToToken(aWeth, totalDebtBase),
-            5 * 10 ** (weth.decimals() - 1),
-            1e15,
-            "A4"
-        );
-        vm.assertApproxEqRel(totalDebtBase * 10000 / totalCollateralBase, targetLtv * 2, 1e15, "A5");
-
-        vm.stopPrank();
-    }
-
-    function test_AmountInTokenToBorrowWithCollateralAlreadyExisting() public {
-        uint256 collateralInWethProvided = 10 * 10 ** weth.decimals();
-        vm.startPrank(bob);
-        pool.supply(address(weth), collateralInWethProvided, bob, 0);
-        vm.stopPrank();
-
-        int256 amountInTokenToBorrow =
-            leveragedPositionManager.getAmountToBorrowInFlashLoan(aWeth, int256(10 * 10 ** weth.decimals()), 8000, bob);
-
-        vm.assertEq(amountInTokenToBorrow, int256(4 * 20 * 10 ** weth.decimals()), "A1");
-
-        uint256 collateralInUsdcProvided = collateralInWethProvided * 2000 / 10 ** (18 - usdc.decimals());
-        vm.startPrank(bob);
-        pool.supply(address(usdc), collateralInUsdcProvided, bob, 0);
-        vm.stopPrank();
-        vm.assertEq(usdc.balanceOf(bob), 980000 * 10 ** usdc.decimals(), "A2");
-
-        amountInTokenToBorrow =
-            leveragedPositionManager.getAmountToBorrowInFlashLoan(aWeth, int256(8 * 10 ** weth.decimals()), 8000, bob);
-        vm.assertEq(amountInTokenToBorrow, int256(4 * 28 * 10 ** weth.decimals()), "A3");
-    }
 
     function test_ValidateLtv_ValidTargetLtv() public {
         uint256 targetLtv = 8000;

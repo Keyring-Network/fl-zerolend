@@ -151,20 +151,15 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         uint256 existingCollateralInToken = convertBaseToToken(aToken, existingCollateralBase);
         uint256 existingDebtInToken = convertBaseToToken(aToken, existingDebtBase);
         
-        // Calculate the new collateral after applying the user's token adjustment.
         int256 newCollateralInToken = int256(existingCollateralInToken) + tokenAmount;
+        console.log("newCollateralInToken", newCollateralInToken);
         if (newCollateralInToken <= 0) {
             revert InvalidResultingCollateral();
         }
 
-        // Calculate the numerator:
-        // targetLtv * newCollateral is computed in fixed point, so we divide by LTV_BASE to restore scale.
         int256 numerator = (int256(targetLtv) * newCollateralInToken) / int256(LTV_BASE) - int256(existingDebtInToken);
-        // Denominator is (LTV_BASE - targetLtv), using the same LTV_BASE scaling.
         int256 denominator = int256(LTV_BASE) - int256(targetLtv);
 
-        // The flash loan amount (X) is given by:
-        // X = numerator / denominator.
         return (numerator * int256(LTV_BASE)) / denominator;
         
     }
@@ -185,9 +180,6 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         //uint256 aTokenBalanceBeforeFlashLoan = aToken.balanceOf(address(this));
 
         IERC20 token = IERC20(aToken.UNDERLYING_ASSET_ADDRESS());
-
-        // @dev: transfer the lent token from the user to this contract
-        token.safeTransferFrom(msg.sender, address(this), uint256(int256(tokenAmount)));
 
         // @dev: set the transient storage
         if (
@@ -252,7 +244,7 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         address initiator,
         bytes calldata params
     ) external returns (bool) {
-        (address user, IPool pool, uint256 interestRateMode, bool isBorrow, int256 SignedTokenAmount) =
+        (address user, IPool pool, uint256 interestRateMode, bool isBorrow, int256 tokenAmount) =
             abi.decode(params, (address, IPool, uint256, bool, int256));
         if (msg.sender != address(transientPool)) {
             revert CallerNotPool(msg.sender, address(transientPool));
@@ -274,21 +266,30 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
         uint256 amountBorrowed = amounts[0];
         uint256 premium = premiums[0];
 
-        uint256 tokenAmount = uint256(SignedTokenAmount);
+        if (tokenAmount > 0) {
+            token.safeTransferFrom(user, address(this), uint256(tokenAmount));
+            token.approve(address(pool), uint256(tokenAmount));
+            pool.supply(address(token), uint256(tokenAmount), user, uint16(interestRateMode));
+        }
 
-        // @dev: approve the token for the pool
-        token.approve(address(pool), amountBorrowed + tokenAmount);
+        token.approve(address(pool), amountBorrowed);
+        if (isBorrow) {
+            pool.supply(address(token), amountBorrowed, user, uint16(interestRateMode));
+            pool.borrow(address(token), amountBorrowed + premium, interestRateMode, 0, user);
+            if (tokenAmount < 0) {
+                pool.borrow(address(token), uint256(-tokenAmount), interestRateMode, 0, user);
+                token.transfer(user, uint256(-tokenAmount));
+            }
+        } else {
+            pool.repay(address(token), amountBorrowed, interestRateMode, user);
+            pool.withdraw(address(token), amountBorrowed + premium, user);
+            if (tokenAmount < 0) {
+                pool.withdraw(address(token), uint256(-tokenAmount), user);
+                token.transfer(user, uint256(-tokenAmount));
+            }
+        }
 
-        // @dev: take the position
-        pool.supply(address(token), amountBorrowed + tokenAmount, user, uint16(interestRateMode));
-
-        // @dev: borrow the token
-        pool.borrow(address(token), amountBorrowed + premium, interestRateMode, 0, user);
-
-        // @dev: set the exact allowance for the pool
         token.approve(address(pool), amountBorrowed + premium);
-
-        // @dev: repayment is held by the pool, by transferingFrom the tokens to the pool
 
         return true;
     }
@@ -310,24 +311,24 @@ contract LeveragedPositionManager is IFlashLoanReceiver {
     }
 
 
-    function getNetBalance(AToken aToken, address user) public view returns (uint256) {
-          DataTypes.ReserveData memory reserve = IPool(ADDRESSES_PROVIDER.getPool()).getReserveData(
-      asset
-    );
+    // function getNetBalance(AToken aToken, address user) public view returns (uint256) {
+    //       DataTypes.ReserveData memory reserve = IPool(ADDRESSES_PROVIDER.getPool()).getReserveData(
+    //   asset
+    // );
 
-    DataTypes.UserConfigurationMap memory userConfig = IPool(ADDRESSES_PROVIDER.getPool())
-      .getUserConfiguration(user);
+    // DataTypes.UserConfigurationMap memory userConfig = IPool(ADDRESSES_PROVIDER.getPool())
+    //   .getUserConfiguration(user);
 
-    currentATokenBalance = IERC20Detailed(reserve.aTokenAddress).balanceOf(user);
-    currentVariableDebt = IERC20Detailed(reserve.variableDebtTokenAddress).balanceOf(user);
-    currentStableDebt = IERC20Detailed(reserve.stableDebtTokenAddress).balanceOf(user);
-    principalStableDebt = IStableDebtToken(reserve.stableDebtTokenAddress).principalBalanceOf(user);
-    scaledVariableDebt = IVariableDebtToken(reserve.variableDebtTokenAddress).scaledBalanceOf(user);
-    liquidityRate = reserve.currentLiquidityRate;
-    stableBorrowRate = IStableDebtToken(reserve.stableDebtTokenAddress).getUserStableRate(user);
-    stableRateLastUpdated = IStableDebtToken(reserve.stableDebtTokenAddress).getUserLastUpdated(
-      user
-    );
+    // currentATokenBalance = IERC20Detailed(reserve.aTokenAddress).balanceOf(user);
+    // currentVariableDebt = IERC20Detailed(reserve.variableDebtTokenAddress).balanceOf(user);
+    // currentStableDebt = IERC20Detailed(reserve.stableDebtTokenAddress).balanceOf(user);
+    // principalStableDebt = IStableDebtToken(reserve.stableDebtTokenAddress).principalBalanceOf(user);
+    // scaledVariableDebt = IVariableDebtToken(reserve.variableDebtTokenAddress).scaledBalanceOf(user);
+    // liquidityRate = reserve.currentLiquidityRate;
+    // stableBorrowRate = IStableDebtToken(reserve.stableDebtTokenAddress).getUserStableRate(user);
+    // stableRateLastUpdated = IStableDebtToken(reserve.stableDebtTokenAddress).getUserLastUpdated(
+    //   user
+    // );
     }
     
-}
+

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.12;
 
-import "../src/LeveragedPositionManager.sol";
-import "../dependencies/forge-std-1.9.6/src/Script.sol";
+import {LeveragedPositionManager} from "../src/LeveragedPositionManager.sol";
+import {Script} from "forge-std/Script.sol";
 
 contract DeployLeveragedPositionManagerScript is Script {
     function run() public {
