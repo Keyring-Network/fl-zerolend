@@ -1,2 +1,5 @@
-@zerolend/=dependencies/zerolend-1.0.0/contracts
 forge-std/=dependencies/forge-std-1.9.6/src
+@forge-std-1.9.6=dependencies/forge-std-1.9.6
+@openzeppelin-contracts-5.2.0=dependencies/@openzeppelin-contracts-5.2.0
+@openzeppelin/=dependencies/@openzeppelin-contracts-5.2.0/
+@src/=src/
