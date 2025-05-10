@@ -8,7 +8,7 @@ import {IUniswapV2Callee} from "@src/vendors/uniswapV2Core/interfaces/IUniswapV2
 
 import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 
-import {ILeveragedPositionManager} from "@src/interface/ILeveragedPositionManager.sol";
+import {ILeveragedPositionManager} from "@src/interfaces/ILeveragedPositionManager.sol";
 
 /// @title LeveragedPositionManagerBase.
 /// @author Keyring Network -- mgnfy-view.
@@ -71,23 +71,24 @@ contract LeveragedPositionManager is ILeveragedPositionManager, IUniswapV2Callee
         (TakeLeveragedPosition memory params, Direction direction) =
             abi.decode(_data, (TakeLeveragedPosition, Direction));
         IPool aaveV3Pool = IPool(params.aaveV3Pool);
-        address aToken = aaveV3Pool.getReserveData(params.supplyToken).aTokenAddress;
 
         if (_sender != thisAddress) revert LeveragedPositionManager__InvalidFlashSwapInitiator();
         if (direction == Direction.INCREASE) {
             uint256 supplyAmount = params.amountSupplyToken + params.bufferAmount;
 
-            aaveV3Pool.supply(params.supplyToken, supplyAmount, thisAddress, DEFAULT_REFERRAL_CODE);
+            IERC20(params.supplyToken).approve(params.aaveV3Pool, supplyAmount);
+            aaveV3Pool.supply(params.supplyToken, supplyAmount, params.user, DEFAULT_REFERRAL_CODE);
             aaveV3Pool.borrow(
                 params.borrowToken,
                 params.amountBorrowToken,
                 params.interestRateMode,
                 DEFAULT_REFERRAL_CODE,
-                thisAddress
+                params.user
             );
             IERC20(params.borrowToken).safeTransfer(params.uniswapV2Pair, params.amountBorrowToken);
         } else {
             uint256 repayAmount = params.amountBorrowToken + params.bufferAmount;
+            address aToken = aaveV3Pool.getReserveData(params.supplyToken).aTokenAddress;
             uint256 aTokensApproved = abi.decode(params.additionalData, (uint256));
 
             IERC20(params.borrowToken).approve(params.aaveV3Pool, repayAmount);
@@ -98,7 +99,6 @@ contract LeveragedPositionManager is ILeveragedPositionManager, IUniswapV2Callee
             IERC20(params.supplyToken).safeTransfer(params.uniswapV2Pair, params.amountSupplyToken);
         }
 
-        _sweepToken(aToken, params.user);
         _sweepToken(params.supplyToken, params.user);
         _sweepToken(params.borrowToken, params.user);
     }

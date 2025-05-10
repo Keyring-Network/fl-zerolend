@@ -3,6 +3,7 @@ src = "src"
 out = "out"
 libs = ["dependencies"]
 optimizer = true
+evm_version = "prague"
 
 [dependencies]
 forge-std = "1.9.6"
