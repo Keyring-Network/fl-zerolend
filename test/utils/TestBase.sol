@@ -13,11 +13,15 @@ import {DataTypes} from "@src/vendors/aaveV3/DataTypes.sol";
 import {LeveragedPositionManager} from "@src/LeveragedPositionManager.sol";
 
 contract TestBase is Test {
+    uint16 internal constant BPS = 1e4;
+
     uint256 internal mainnetFork;
     uint256 internal startBlockNumber;
 
+    address internal owner;
     address internal user1;
     uint256 internal userKey;
+    uint16 internal feeInBps;
 
     address internal usdc;
     address internal weth;
@@ -43,7 +47,9 @@ contract TestBase is Test {
         startBlockNumber = 22451521;
         vm.rollFork(startBlockNumber);
 
+        owner = makeAddr("owner");
         (user1, userKey) = makeAddrAndKey("user1");
+        feeInBps = 100;
 
         usdc = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
         weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
@@ -58,7 +64,7 @@ contract TestBase is Test {
         variableDebtUsdcToken = usdcPoolData.variableDebtTokenAddress;
         variableDebtWethToken = wethPoolData.variableDebtTokenAddress;
 
-        leveragedPositionManager = new LeveragedPositionManager();
+        leveragedPositionManager = new LeveragedPositionManager(owner, feeInBps);
     }
 
     function _increaseLeveragedPosition(ILeveragedPositionManager.TakeLeveragedPosition memory _params, address _user)
