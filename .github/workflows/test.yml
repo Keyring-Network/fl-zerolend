@@ -43,6 +43,10 @@ jobs:
           forge build --sizes
         id: build
 
+      - name: Add Ethereum mainnet rpc url to environment
+        run: |
+          echo "RPC_URL=https://ethereum-rpc.publicnode.com" >> $GITHUB_ENV
+
       - name: Run Forge tests
         run: |
           forge test -vvv
