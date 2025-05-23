@@ -41,6 +41,7 @@ interface ILeveragedPositionManager {
     }
 
     event FeeSet(uint16 indexed feeInBps);
+    event PositionManagerSet(address user, address operator, bool status);
     event IncreaseLeveragedPosition(address indexed caller, TakeLeveragedPosition indexed params);
     event DecreaseLeveragedPosition(address indexed caller, TakeLeveragedPosition indexed params);
 
@@ -51,6 +52,7 @@ interface ILeveragedPositionManager {
     error LeveragedPositionManager__InvalidAaveV3Pool();
 
     function setFeeInBps(uint16 _newFeeInBps) external;
+    function setOperator(address _operator, bool _set) external;
     function collectFees(address _token, uint256 _amount, address _to) external;
     function increaseLeveragedPosition(TakeLeveragedPosition memory _params) external;
     function decreaseLeveragedPosition(TakeLeveragedPosition memory _params) external;
