@@ -140,4 +140,10 @@ contract TestBase is Test {
         leveragedPositionManager.decreaseLeveragedPosition(_params);
         vm.stopPrank();
     }
+
+    function _setFees(uint16 _feeInBps) internal {
+        vm.startPrank(owner);
+        leveragedPositionManager.setFeeInBps(_feeInBps);
+        vm.stopPrank();
+    }
 }

@@ -156,4 +156,45 @@ contract DecreaseLeveragedPositionTests is TestBase {
         leveragedPositionManager.decreaseLeveragedPosition(closeParams);
         vm.stopPrank();
     }
+
+    function test_closeLeveragedPositionWithoutFees() external {
+        _setFees(0);
+
+        ILeveragedPositionManager.TakeLeveragedPosition memory openParams = ILeveragedPositionManager
+            .TakeLeveragedPosition({
+            user: user1,
+            supplyToken: WETH,
+            borrowToken: USDC,
+            amountSupplyToken: sampleIncreaseLeveragedPositionParams.wethAmount,
+            bufferAmount: sampleIncreaseLeveragedPositionParams.bufferAmount,
+            amountBorrowToken: sampleIncreaseLeveragedPositionParams.usdcAmount,
+            uniswapV2Pair: UNISWAP_V2_USDC_WETH_PAIR,
+            aaveV3Pool: AAVE_V3_POOL,
+            interestRateMode: VARIABLE_INTEREST_RATE_MODE,
+            additionalData: ""
+        });
+
+        _increaseLeveragedPosition(openParams, sampleIncreaseLeveragedPositionParams.expectedFeeAmount, user1);
+
+        uint256 wethBufferAmount = 1 * 10 ** (IERC20Metadata(WETH).decimals() - 2);
+        ILeveragedPositionManager.TakeLeveragedPosition memory closeParams = ILeveragedPositionManager
+            .TakeLeveragedPosition({
+            user: user1,
+            supplyToken: WETH,
+            borrowToken: USDC,
+            amountSupplyToken: sampleDecreaseLeveragedPositionParams.wethAmount,
+            bufferAmount: sampleDecreaseLeveragedPositionParams.bufferAmount,
+            amountBorrowToken: sampleDecreaseLeveragedPositionParams.usdcAmount,
+            uniswapV2Pair: UNISWAP_V2_USDC_WETH_PAIR,
+            aaveV3Pool: AAVE_V3_POOL,
+            interestRateMode: VARIABLE_INTEREST_RATE_MODE,
+            additionalData: abi.encode(sampleIncreaseLeveragedPositionParams.wethAmount, wethBufferAmount)
+        });
+
+        _decreaseLeveragedPosition(closeParams, sampleDecreaseLeveragedPositionParams.expectedFeeAmount, user1);
+
+        uint256 usdcFeeCollected = IERC20(USDC).balanceOf(leveragedPositionManager.getFeeCollector());
+
+        assertEq(usdcFeeCollected, 0);
+    }
 }
