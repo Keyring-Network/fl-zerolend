@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 interface IFeeCollector {
     event FeeCollected(address indexed token, uint256 indexed amount, address indexed to);

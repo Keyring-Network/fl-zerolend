@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 /// @title ILeveragedPositionManager.
 /// @author Keyring Network -- mgnfy-view.
 /// @notice Interface for the Leveraged Position Manager contract.
 interface ILeveragedPositionManager {
     /// @notice Enum indicating whether to increase the leveraged position size,
-    /// or decrease the position size.
+    /// or decrease it.
     enum Direction {
         INCREASE,
         DECREASE
@@ -26,7 +26,7 @@ interface ILeveragedPositionManager {
     /// @param aaveV3Pool The aave v3 pool to open a leveraged position on.
     /// @param interestRateMode The interest rate mode (variable or stable) to use for borrowing.
     /// @param additionalData Used exclusively for decreasing position size. Specifies the amount of aTokens to
-    /// use to withdraw the supplied tokens.
+    /// use to withdraw the supplied tokens, and a buffer supply token amount to cover any fees.
     struct TakeLeveragedPosition {
         address user;
         address supplyToken;
@@ -43,7 +43,6 @@ interface ILeveragedPositionManager {
     event FeeSet(uint16 indexed feeInBps);
     event IncreaseLeveragedPosition(address indexed caller, TakeLeveragedPosition indexed params);
     event DecreaseLeveragedPosition(address indexed caller, TakeLeveragedPosition indexed params);
-    event FeeCollected(address indexed token, uint256 feeAmount);
 
     error LeveragedPositionManager__MaxFeeExceeded();
     error LeveragedPositionManager__InvalidUniswapV2Pair();
@@ -55,6 +54,8 @@ interface ILeveragedPositionManager {
     function collectFees(address _token, uint256 _amount, address _to) external;
     function increaseLeveragedPosition(TakeLeveragedPosition memory _params) external;
     function decreaseLeveragedPosition(TakeLeveragedPosition memory _params) external;
+    function getUniswapV2Factory() external view returns (address);
     function getFeeInBps() external view returns (uint16);
     function getFeeCollector() external view returns (address);
+    function checkAccumulatedFees(address _token) external view returns (uint256);
 }
