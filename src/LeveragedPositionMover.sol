@@ -12,11 +12,11 @@ import {ILeveragedPositionMover} from "@src/interfaces/ILeveragedPositionMover.s
 import {Sweeper} from "@src/utils/Sweeper.sol";
 import {MathHelper} from "@src/utils/MathHelper.sol";
 
-/// @title PositionMover.
+/// @title LeveragedPositionMover.
 /// @author Keyring Network -- mgnfy-view.
 /// @notice A contract that allows you to move your leveraged position from
 /// Aave to another Aave fork, vice-versa, and between Aave forks.
-contract PositionMover is Sweeper, ILeveragedPositionMover {
+contract LeveragedPositionMover is Sweeper, ILeveragedPositionMover {
     using SafeERC20 for IERC20;
 
     /// @dev The leveraged position mnager contract.
@@ -24,8 +24,11 @@ contract PositionMover is Sweeper, ILeveragedPositionMover {
     /// @dev Caching this contract's address.
     address internal immutable i_thisAddress;
 
-    /// @notice Caches the contract address.
-    constructor() {
+    /// @notice Initializes the contract.
+    /// @param _leveragedPositionManager The leveraged position manager contract address.
+    constructor(address _leveragedPositionManager) {
+        i_leveragedPositionManager = ILeveragedPositionManager(_leveragedPositionManager);
+
         i_thisAddress = address(this);
     }
 
@@ -47,7 +50,7 @@ contract PositionMover is Sweeper, ILeveragedPositionMover {
         _sweepToken(_initialPosition.supplyToken, msg.sender);
         _sweepToken(_initialPosition.borrowToken, msg.sender);
 
-        emit PositionMoved(_initialPosition, _finalPosition);
+        emit LeveragedPositionMoved(_initialPosition, _finalPosition);
     }
 
     /// @notice Validates the input params to increase or decrease a position size.
@@ -58,19 +61,19 @@ contract PositionMover is Sweeper, ILeveragedPositionMover {
         ILeveragedPositionManager.TakeLeveragedPosition memory _finalPosition
     ) internal view {
         if (_initialPosition.user != _finalPosition.user && _finalPosition.user != msg.sender) {
-            revert PositionMover__CallerNotPositionOwner();
+            revert LeveragedPositionMover__CallerNotPositionOwner();
         }
         if (
             _initialPosition.supplyToken != _finalPosition.supplyToken
                 || _initialPosition.borrowToken != _initialPosition.borrowToken
         ) {
-            revert PositionMover__InvalidPositionsToMove();
+            revert LeveragedPositionMover__InvalidPositionsToMove();
         }
         if (_initialPosition.uniswapV2Pair != _finalPosition.uniswapV2Pair) {
-            revert PositionMover__InvalidUniswapV2Pair();
+            revert LeveragedPositionMover__InvalidUniswapV2Pair();
         }
         if (_initialPosition.aaveV3Pool == _finalPosition.aaveV3Pool) {
-            revert PositionMover__InvalidLendingPools();
+            revert LeveragedPositionMover__InvalidLendingPools();
         }
     }
 
@@ -96,6 +99,10 @@ contract PositionMover is Sweeper, ILeveragedPositionMover {
         i_leveragedPositionManager.decreaseLeveragedPosition(_initialPosition);
 
         if (_amountToWithdraw > 0) {
+            address aToken =
+                IPool(_initialPosition.aaveV3Pool).getReserveData(_initialPosition.supplyToken).aTokenAddress;
+
+            IERC20(aToken).safeTransferFrom(_initialPosition.user, i_thisAddress, _amountToWithdraw);
             IPool(_initialPosition.aaveV3Pool).withdraw(
                 _initialPosition.supplyToken, _amountToWithdraw, _initialPosition.user
             );

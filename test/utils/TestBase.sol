@@ -12,6 +12,7 @@ import {IPool} from "@src/vendors/aaveV3/interfaces/IPool.sol";
 import {DataTypes} from "@src/vendors/aaveV3/DataTypes.sol";
 
 import {LeveragedPositionManager} from "@src/LeveragedPositionManager.sol";
+import {LeveragedPositionMover} from "@src/LeveragedPositionMover.sol";
 
 contract TestBase is Test {
     struct SampleLeveragedPositionParams {
@@ -40,7 +41,7 @@ contract TestBase is Test {
     address internal constant UNISWAP_V2_FACTORY = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
     address internal constant UNISWAP_V2_USDC_WETH_PAIR = 0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc;
     address internal AAVE_V3_POOL = 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2;
-    address internal aUSDC;
+    address internal aUsdc;
     address internal aWeth;
     address internal variableDebtUsdcToken;
     address internal variableDebtWethToken;
@@ -49,10 +50,11 @@ contract TestBase is Test {
     SampleLeveragedPositionParams internal sampleDecreaseLeveragedPositionParams;
 
     LeveragedPositionManager internal leveragedPositionManager;
+    LeveragedPositionMover internal leveragedPositionMover;
 
     error TestBase__InvalidTokensPassed();
 
-    function setUp() public {
+    function setUp() public virtual {
         string memory RPC_URL = vm.envString("RPC_URL");
         if (bytes(RPC_URL).length == 0) {
             RPC_URL = "https://ethereum-rpc.publicnode.com";
@@ -68,7 +70,7 @@ contract TestBase is Test {
 
         DataTypes.ReserveData memory usdcPoolData = IPool(AAVE_V3_POOL).getReserveData(USDC);
         DataTypes.ReserveData memory wethPoolData = IPool(AAVE_V3_POOL).getReserveData(WETH);
-        aUSDC = usdcPoolData.aTokenAddress;
+        aUsdc = usdcPoolData.aTokenAddress;
         aWeth = wethPoolData.aTokenAddress;
         variableDebtUsdcToken = usdcPoolData.variableDebtTokenAddress;
         variableDebtWethToken = wethPoolData.variableDebtTokenAddress;
@@ -94,6 +96,18 @@ contract TestBase is Test {
         });
 
         leveragedPositionManager = new LeveragedPositionManager(UNISWAP_V2_FACTORY, owner, feeInBps);
+        leveragedPositionMover = new LeveragedPositionMover(address(leveragedPositionManager));
+
+        vm.label(USDC, "USDC");
+        vm.label(WETH, "WETH");
+        vm.label(UNISWAP_V2_FACTORY, "Uniswap V2 Factory");
+        vm.label(UNISWAP_V2_USDC_WETH_PAIR, "Uniswap V2 USDC WETH Pair");
+        vm.label(aUsdc, "aUSDC");
+        vm.label(aWeth, "aWeth");
+        vm.label(variableDebtUsdcToken, "Variable Debt USDC Token");
+        vm.label(variableDebtWethToken, "Variable Debt WETH Token");
+        vm.label(address(leveragedPositionManager), "LeveragedPositionManager");
+        vm.label(address(leveragedPositionMover), "LeveragedPositionMover");
     }
 
     function _increaseLeveragedPosition(
@@ -127,7 +141,7 @@ contract TestBase is Test {
         deal(_params.borrowToken, _user, _params.bufferAmount + _feeAmount);
         IERC20(_params.borrowToken).approve(address(leveragedPositionManager), _params.bufferAmount + _feeAmount);
 
-        address aToken = _params.supplyToken == USDC ? aUSDC : _params.supplyToken == WETH ? aWeth : address(0);
+        address aToken = _params.supplyToken == USDC ? aUsdc : _params.supplyToken == WETH ? aWeth : address(0);
         if (aToken == address(0)) revert TestBase__InvalidTokensPassed();
 
         (uint256 approvedATokenAmount, uint256 supplyTokenBufferAmount) =
@@ -144,6 +158,46 @@ contract TestBase is Test {
     function _setFees(uint16 _feeInBps) internal {
         vm.startPrank(owner);
         leveragedPositionManager.setFeeInBps(_feeInBps);
+        vm.stopPrank();
+    }
+
+    function _move(
+        ILeveragedPositionManager.TakeLeveragedPosition memory _initialPosition,
+        uint256 _initialPositionFeeAmount,
+        uint256 _amountToWithdraw,
+        ILeveragedPositionManager.TakeLeveragedPosition memory _finalPosition,
+        uint256 _finalPositionFeeAmount,
+        address _user
+    ) internal {
+        vm.startPrank(_user);
+        leveragedPositionManager.setOperator(address(leveragedPositionMover), true);
+
+        deal(_initialPosition.borrowToken, _user, _initialPosition.bufferAmount + _initialPositionFeeAmount);
+        IERC20(_initialPosition.borrowToken).approve(
+            address(leveragedPositionMover), _initialPosition.bufferAmount + _initialPositionFeeAmount
+        );
+        address initialPositionAToken =
+            IPool(_initialPosition.aaveV3Pool).getReserveData(_initialPosition.supplyToken).aTokenAddress;
+        (uint256 aTokensApproved, uint256 supplyTokenBufferAmount) =
+            abi.decode(_initialPosition.additionalData, (uint256, uint256));
+        IERC20(initialPositionAToken).approve(address(leveragedPositionManager), aTokensApproved);
+        deal(_initialPosition.supplyToken, _user, supplyTokenBufferAmount);
+        IERC20(_initialPosition.supplyToken).approve(address(leveragedPositionManager), supplyTokenBufferAmount);
+
+        address aToken = IPool(_initialPosition.aaveV3Pool).getReserveData(_initialPosition.supplyToken).aTokenAddress;
+        IERC20(aToken).approve(address(leveragedPositionMover), _amountToWithdraw);
+
+        deal(_finalPosition.supplyToken, _user, _finalPosition.bufferAmount + _finalPositionFeeAmount);
+        IERC20(_finalPosition.supplyToken).approve(
+            address(leveragedPositionMover), _finalPosition.bufferAmount + _finalPositionFeeAmount
+        );
+        address finalPositionVariableDebtToken =
+            IPool(_finalPosition.aaveV3Pool).getReserveData(_finalPosition.borrowToken).variableDebtTokenAddress;
+        ICreditDelegationToken(finalPositionVariableDebtToken).approveDelegation(
+            address(leveragedPositionManager), _finalPosition.amountBorrowToken
+        );
+
+        leveragedPositionMover.move(_initialPosition, _amountToWithdraw, _finalPosition);
         vm.stopPrank();
     }
 }

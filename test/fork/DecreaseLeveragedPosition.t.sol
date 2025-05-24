@@ -147,7 +147,7 @@ contract DecreaseLeveragedPositionTests is TestBase {
 
         (uint256 approvedATokenAmount, uint256 supplyTokenBufferAmount) =
             abi.decode(closeParams.additionalData, (uint256, uint256));
-        IERC20(aUSDC).approve(address(leveragedPositionManager), approvedATokenAmount);
+        IERC20(aUsdc).approve(address(leveragedPositionManager), approvedATokenAmount);
 
         deal(closeParams.supplyToken, user1, supplyTokenBufferAmount);
         IERC20(closeParams.supplyToken).approve(address(leveragedPositionManager), supplyTokenBufferAmount);

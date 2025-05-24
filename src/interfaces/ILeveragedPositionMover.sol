@@ -4,15 +4,15 @@ pragma solidity ^0.8.20;
 import {ILeveragedPositionManager} from "@src/interfaces/ILeveragedPositionManager.sol";
 
 interface ILeveragedPositionMover {
-    event PositionMoved(
+    event LeveragedPositionMoved(
         ILeveragedPositionManager.TakeLeveragedPosition indexed _initialPosition,
         ILeveragedPositionManager.TakeLeveragedPosition indexed _finalPosition
     );
 
-    error PositionMover__CallerNotPositionOwner();
-    error PositionMover__InvalidPositionsToMove();
-    error PositionMover__InvalidUniswapV2Pair();
-    error PositionMover__InvalidLendingPools();
+    error LeveragedPositionMover__CallerNotPositionOwner();
+    error LeveragedPositionMover__InvalidPositionsToMove();
+    error LeveragedPositionMover__InvalidUniswapV2Pair();
+    error LeveragedPositionMover__InvalidLendingPools();
 
     function move(
         ILeveragedPositionManager.TakeLeveragedPosition memory _initialPosition,
