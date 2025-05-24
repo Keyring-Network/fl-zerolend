@@ -7,7 +7,7 @@ import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 
 import {IPool} from "@src/vendors/aaveV3/interfaces/IPool.sol";
 import {ILeveragedPositionManager} from "@src/interfaces/ILeveragedPositionManager.sol";
-import {IPositionMover} from "@src/interfaces/IPositionMover.sol";
+import {ILeveragedPositionMover} from "@src/interfaces/ILeveragedPositionMover.sol";
 
 import {Sweeper} from "@src/utils/Sweeper.sol";
 import {MathHelper} from "@src/utils/MathHelper.sol";
@@ -16,7 +16,7 @@ import {MathHelper} from "@src/utils/MathHelper.sol";
 /// @author Keyring Network -- mgnfy-view.
 /// @notice A contract that allows you to move your leveraged position from
 /// Aave to another Aave fork, vice-versa, and between Aave forks.
-contract PositionMover is Sweeper, IPositionMover {
+contract PositionMover is Sweeper, ILeveragedPositionMover {
     using SafeERC20 for IERC20;
 
     /// @dev The leveraged position mnager contract.

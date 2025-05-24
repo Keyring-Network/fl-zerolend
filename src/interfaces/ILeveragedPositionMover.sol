@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {ILeveragedPositionManager} from "@src/interfaces/ILeveragedPositionManager.sol";
 
-interface IPositionMover {
+interface ILeveragedPositionMover {
     event PositionMoved(
         ILeveragedPositionManager.TakeLeveragedPosition indexed _initialPosition,
         ILeveragedPositionManager.TakeLeveragedPosition indexed _finalPosition
