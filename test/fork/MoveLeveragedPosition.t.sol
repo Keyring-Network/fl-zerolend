@@ -7,9 +7,7 @@ import {IERC20Metadata} from "@openzeppelin/token/ERC20/extensions/IERC20Metadat
 import {console} from "forge-std/console.sol";
 
 import {ILeveragedPositionManager} from "@src/interfaces/ILeveragedPositionManager.sol";
-import {ICreditDelegationToken} from "@src/vendors/aaveV3/interfaces/ICreditDelegationToken.sol";
 import {IPool} from "@src/vendors/aaveV3/interfaces/IPool.sol";
-import {IFeeCollector} from "@src/interfaces/IFeeCollector.sol";
 
 import {TestBase} from "@test/utils/TestBase.sol";
 

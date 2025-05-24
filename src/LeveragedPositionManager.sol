@@ -225,6 +225,14 @@ contract LeveragedPositionManager is Ownable, Sweeper, ILeveragedPositionManager
         return address(i_feeCollector);
     }
 
+    /// @notice Checks if the given operator has permission to manage the user's leveraged
+    /// position.
+    /// @param _user The user's address.
+    /// @param _operator The operator's address.
+    function isPermittedPositionManager(address _user, address _operator) external view returns (bool) {
+        return s_permittedPositionManagers[_user][_operator];
+    }
+
     /// @notice Gets the total fee accumulated in the fee collector for a given token.
     /// @param _token The token contract address.
     /// @return The amount of fee accumulated.

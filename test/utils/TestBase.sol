@@ -161,6 +161,12 @@ contract TestBase is Test {
         vm.stopPrank();
     }
 
+    function _setOperator(address _user, address _operator, bool _set) internal {
+        vm.startPrank(_user);
+        leveragedPositionManager.setOperator(_operator, _set);
+        vm.stopPrank();
+    }
+
     function _move(
         ILeveragedPositionManager.TakeLeveragedPosition memory _initialPosition,
         uint256 _initialPositionFeeAmount,

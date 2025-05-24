@@ -59,5 +59,6 @@ interface ILeveragedPositionManager {
     function getUniswapV2Factory() external view returns (address);
     function getFeeInBps() external view returns (uint16);
     function getFeeCollector() external view returns (address);
+    function isPermittedPositionManager(address _user, address _operator) external view returns (bool);
     function checkAccumulatedFees(address _token) external view returns (uint256);
 }
